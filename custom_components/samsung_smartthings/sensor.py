@@ -26,30 +26,30 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
+    entities: list[SensorEntity] = []
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        dev = coordinator.device
 
-    entities: list[SamsungSmartThingsAttrSensor] = []
-
-    # Expose *all* attributes as sensors when enabled.
-    if dev.runtime and dev.runtime.expose_all:
-        seen: set[tuple[str, str, str]] = set()
-        for comp, cap, attr, _val, unit in dev.flatten_attributes():
-            key = (comp, cap, attr)
-            if key in seen:
-                continue
-            seen.add(key)
-            entities.append(
-                SamsungSmartThingsAttrSensor(
-                    coordinator,
-                    SmartThingsAttr(component=comp, capability=cap, attribute=attr, unit=unit),
+        # Expose *all* attributes as sensors when enabled.
+        if dev.runtime and dev.runtime.expose_all:
+            seen: set[tuple[str, str, str]] = set()
+            for comp, cap, attr, _val, unit in dev.flatten_attributes():
+                key = (comp, cap, attr)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entities.append(
+                    SamsungSmartThingsAttrSensor(
+                        coordinator,
+                        SmartThingsAttr(component=comp, capability=cap, attribute=attr, unit=unit),
+                    )
                 )
-            )
 
-    # A few useful "always-on" device info sensors (even if expose_all is off).
-    entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnmo", "OCF Model", lambda d: d.get_attr("ocf", "mnmo")))
-    entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnfv", "Firmware", lambda d: d.get_attr("ocf", "mnfv")))
-    entities.append(SamsungSmartThingsSimpleSensor(coordinator, "thing_status", "Thing Status", lambda d: d.get_attr("samsungvd.thingStatus", "status")))
+        # A few useful "always-on" device info sensors (even if expose_all is off).
+        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnmo", "OCF Model", lambda d: d.get_attr("ocf", "mnmo")))
+        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnfv", "Firmware", lambda d: d.get_attr("ocf", "mnfv")))
+        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "thing_status", "Thing Status", lambda d: d.get_attr("samsungvd.thingStatus", "status")))
 
     async_add_entities(entities)
 

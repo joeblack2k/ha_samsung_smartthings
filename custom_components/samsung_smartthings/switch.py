@@ -15,12 +15,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
-
     entities: list[SwitchEntity] = []
-    if dev.has_capability("switch"):
-        entities.append(SamsungSmartThingsPowerSwitch(coordinator))
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        dev = coordinator.device
+        if dev.has_capability("switch"):
+            entities.append(SamsungSmartThingsPowerSwitch(coordinator))
 
     async_add_entities(entities)
 
@@ -49,4 +49,3 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs) -> None:
         await self.device.send_command("switch", "off", arguments=[])
         await self.coordinator.async_request_refresh()
-

@@ -15,12 +15,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
-
     entities: list[TextEntity] = []
-    if dev.has_capability("tvChannel"):
-        entities.append(SamsungSmartThingsTvChannelText(coordinator))
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        dev = coordinator.device
+        if dev.has_capability("tvChannel"):
+            entities.append(SamsungSmartThingsTvChannelText(coordinator))
 
     async_add_entities(entities)
 
@@ -45,4 +45,3 @@ class SamsungSmartThingsTvChannelText(SamsungSmartThingsEntity, TextEntity):
         # SmartThings tvChannel.setTvChannel expects a string in most definitions.
         await self.device.send_command("tvChannel", "setTvChannel", arguments=[value])
         await self.coordinator.async_request_refresh()
-

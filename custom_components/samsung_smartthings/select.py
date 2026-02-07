@@ -30,20 +30,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
-
     entities: list[SelectEntity] = []
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        dev = coordinator.device
 
-    # Picture mode
-    if dev.has_capability("custom.picturemode"):
-        entities.append(SamsungSmartThingsSelect(coordinator, _picture_mode_desc()))
-    # Sound mode
-    if dev.has_capability("custom.soundmode"):
-        entities.append(SamsungSmartThingsSelect(coordinator, _sound_mode_desc()))
-    # TV input source (Samsung map)
-    if dev.has_capability("samsungvd.mediaInputSource"):
-        entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
+        # Picture mode
+        if dev.has_capability("custom.picturemode"):
+            entities.append(SamsungSmartThingsSelect(coordinator, _picture_mode_desc()))
+        # Sound mode
+        if dev.has_capability("custom.soundmode"):
+            entities.append(SamsungSmartThingsSelect(coordinator, _sound_mode_desc()))
+        # TV input source (Samsung map)
+        if dev.has_capability("samsungvd.mediaInputSource"):
+            entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
 
     async_add_entities(entities)
 

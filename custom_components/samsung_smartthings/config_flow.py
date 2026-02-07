@@ -10,6 +10,8 @@ from homeassistant import config_entries
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
+    CONF_DEVICE_IDS,
+    CONF_ADD_ALL,
     CONF_EXPOSE_ALL,
     CONF_SCAN_INTERVAL,
     CONF_TOKEN,
@@ -28,6 +30,9 @@ async def _validate_token(hass, token: str) -> list[dict[str, Any]]:
     # Filter to Samsung by default, but keep all in case user needs it.
     return [d for d in devices if isinstance(d, dict)]
 
+def _is_samsung(d: dict[str, Any]) -> bool:
+    return (d.get("manufacturerName") or "").lower().startswith("samsung")
+
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -39,8 +44,40 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._token = user_input.get(CONF_TOKEN, "").strip()
             self._expose_all = bool(user_input.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
             self._scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+            self._add_all = bool(user_input.get(CONF_ADD_ALL, False))
             try:
                 self._devices = await _validate_token(self.hass, self._token)
+                if self._add_all:
+                    # Add all Samsung devices under a single config entry.
+                    device_ids = []
+                    for d in self._devices:
+                        if not isinstance(d, dict) or not _is_samsung(d):
+                            continue
+                        did = d.get("deviceId")
+                        if isinstance(did, str) and did:
+                            device_ids.append(did)
+
+                    # Filter out already-configured device_ids.
+                    existing: set[str] = set()
+                    for e in self._async_current_entries():
+                        for did in (e.data.get(CONF_DEVICE_IDS) or []):
+                            if isinstance(did, str):
+                                existing.add(did)
+                        did = e.data.get(CONF_DEVICE_ID)
+                        if isinstance(did, str):
+                            existing.add(did)
+                    device_ids = [d for d in device_ids if d not in existing]
+                    if not device_ids:
+                        return self.async_abort(reason="already_configured")
+
+                    data = {
+                        CONF_TOKEN: self._token,
+                        CONF_DEVICE_IDS: device_ids,
+                        CONF_EXPOSE_ALL: self._expose_all,
+                        CONF_SCAN_INTERVAL: self._scan_interval,
+                    }
+                    return self.async_create_entry(title="Samsung SmartThings (All Samsung devices)", data=data)
+
                 return await self.async_step_device()
             except ClientResponseError as exc:
                 if exc.status == 401:
@@ -58,6 +95,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_TOKEN): str,
                     vol.Required(CONF_EXPOSE_ALL, default=DEFAULT_EXPOSE_ALL): bool,
                     vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(int, vol.Range(min=5, max=300)),
+                    vol.Required(CONF_ADD_ALL, default=False): bool,
                 }
             ),
             errors=errors,
@@ -72,7 +110,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         others = [d for d in devices if d not in samsung]
         ordered = samsung + others
 
-        # Create a mapping label -> deviceId (include type for uniqueness).
+        # Create a mapping deviceId -> label for HA UI.
+        # HA will return the key (device id), but display the value (label).
         options: dict[str, str] = {}
         for d in ordered:
             did = d.get("deviceId")
@@ -81,7 +120,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             label = d.get("label") or d.get("name") or did
             dtype = d.get("deviceTypeName") or ""
             opt = f"{label} [{dtype}] ({did[:8]})"
-            options[opt] = did
+            options[did] = opt
 
         if user_input is not None:
             device_id = user_input.get(CONF_DEVICE_ID)

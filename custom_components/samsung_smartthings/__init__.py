@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DEVICE_IDS,
     CONF_EXPOSE_ALL,
     CONF_SCAN_INTERVAL,
     CONF_TOKEN,
@@ -27,8 +28,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         device_id = call.data.get("device_id")
         if isinstance(device_id, str) and device_id:
             for e in hass.data.get(DOMAIN, {}).values():
-                if e.get("device").device_id == device_id:
-                    return e["device"], e["coordinator"]
+                for it in e.get("items") or []:
+                    dev = it.get("device")
+                    if dev and dev.device_id == device_id:
+                        return dev, it["coordinator"]
             raise ValueError(f"Unknown device_id: {device_id}")
 
         entity_ids = []
@@ -50,7 +53,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         match = hass.data.get(DOMAIN, {}).get(ent.config_entry_id)
         if not match:
             raise ValueError(f"Config entry not loaded: {ent.config_entry_id}")
-        return match["device"], match["coordinator"]
+        # If a config entry contains multiple devices, try to resolve by device_id in call first.
+        items = match.get("items") or []
+        if not items:
+            raise ValueError(f"Config entry has no devices: {ent.config_entry_id}")
+
+        # If the user targeted an entity_id, we might not know which device. Prefer first.
+        return items[0]["device"], items[0]["coordinator"]
 
     async def _raw_command(call) -> None:
         dev, coordinator = await _resolve_device(call)
@@ -129,17 +138,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("[%s] setup entry: %s", DOMAIN, redacted)
 
     api = SmartThingsApi(hass, entry.data[CONF_TOKEN])
-    dev = SmartThingsDevice(api, entry.data[CONF_DEVICE_ID], expose_all=entry.data.get(CONF_EXPOSE_ALL, True))
-    await dev.async_init()
 
-    coordinator = SmartThingsCoordinator(hass, dev, scan_interval=entry.data.get(CONF_SCAN_INTERVAL, 15))
-    await coordinator.async_config_entry_first_refresh()
+    device_ids: list[str] = []
+    if isinstance(entry.data.get(CONF_DEVICE_IDS), list):
+        device_ids = [d for d in entry.data[CONF_DEVICE_IDS] if isinstance(d, str) and d]
+    else:
+        did = entry.data.get(CONF_DEVICE_ID)
+        if isinstance(did, str) and did:
+            device_ids = [did]
+
+    items: list[dict] = []
+    for device_id in device_ids:
+        dev = SmartThingsDevice(api, device_id, expose_all=entry.data.get(CONF_EXPOSE_ALL, True))
+        await dev.async_init()
+        coordinator = SmartThingsCoordinator(hass, dev, scan_interval=entry.data.get(CONF_SCAN_INTERVAL, 15))
+        await coordinator.async_config_entry_first_refresh()
+        items.append({"device": dev, "coordinator": coordinator})
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
-        "device": dev,
-        "coordinator": coordinator,
+        "items": items,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -9,6 +9,12 @@ raw_command:
       required: false
       selector:
         text: {}
+    entity_id:
+      name: Entity ID
+      description: Any entity created by this integration. Optional if you provide device_id.
+      required: false
+      selector:
+        entity: {}
     component:
       name: Component
       description: SmartThings component (usually `main`).

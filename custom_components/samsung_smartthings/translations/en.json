@@ -7,7 +7,8 @@
         "data": {
           "token": "Personal Access Token",
           "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)",
-          "scan_interval": "Polling interval (seconds)"
+          "scan_interval": "Polling interval (seconds)",
+          "add_all": "Add all Samsung devices (Frame TVs, soundbars, etc.)"
         }
       },
       "device": {
@@ -19,6 +20,9 @@
       "cannot_connect": "Failed to connect to SmartThings.",
       "invalid_auth": "Invalid token.",
       "invalid_device": "Invalid device selection."
+    },
+    "abort": {
+      "already_configured": "All Samsung devices are already configured."
     }
   }
 }

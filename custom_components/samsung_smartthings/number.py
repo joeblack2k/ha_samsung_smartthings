@@ -15,18 +15,18 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
-
     entities: list[NumberEntity] = []
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        dev = coordinator.device
 
-    # Soundbar volume (absolute) as number is redundant with media_player, but useful for raw control.
-    if dev.has_capability("audioVolume") and dev.runtime and dev.runtime.expose_all:
-        entities.append(SamsungSmartThingsVolumeNumber(coordinator))
+        # Soundbar volume (absolute) as number is redundant with media_player, but useful for raw control.
+        if dev.has_capability("audioVolume") and dev.runtime and dev.runtime.expose_all:
+            entities.append(SamsungSmartThingsVolumeNumber(coordinator))
 
-    # Soundbar: samsungvd.soundFrom mode (integer)
-    if dev.has_capability("samsungvd.soundFrom") and dev.runtime and dev.runtime.expose_all:
-        entities.append(SamsungSmartThingsSoundFromModeNumber(coordinator))
+        # Soundbar: samsungvd.soundFrom mode (integer)
+        if dev.has_capability("samsungvd.soundFrom") and dev.runtime and dev.runtime.expose_all:
+            entities.append(SamsungSmartThingsSoundFromModeNumber(coordinator))
 
     async_add_entities(entities)
 

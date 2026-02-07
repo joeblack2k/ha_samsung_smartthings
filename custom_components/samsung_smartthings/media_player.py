@@ -23,9 +23,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SmartThingsCoordinator = domain["coordinator"]
-    dev = coordinator.device
-    async_add_entities([SamsungSmartThingsMediaPlayer(coordinator)])
+    entities: list[SamsungSmartThingsMediaPlayer] = []
+    for it in domain.get("items") or []:
+        coordinator: SmartThingsCoordinator = it["coordinator"]
+        entities.append(SamsungSmartThingsMediaPlayer(coordinator))
+    async_add_entities(entities)
 
 
 class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity):
@@ -139,4 +141,3 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
     async def async_media_previous_track(self) -> None:
         await self.device.send_command("mediaTrackControl", "previousTrack", arguments=[])
         await self.coordinator.async_request_refresh()
-
