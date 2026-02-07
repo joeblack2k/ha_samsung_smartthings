@@ -18,6 +18,10 @@ except Exception:  # pragma: no cover - depends on HA version
 
         class RemoteEntityFeature(IntFlag):  # type: ignore[no-redef]
             SEND_COMMAND = 1
+
+# Some HA builds expose RemoteEntityFeature but without SEND_COMMAND (e.g. only learn/delete).
+# For our remote entity we only need the send_command service, so we fall back to bit 1.
+_FEATURE_SEND_COMMAND = getattr(RemoteEntityFeature, "SEND_COMMAND", 1)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -45,7 +49,7 @@ async def async_setup_entry(
 
 class SamsungSmartThingsRemote(SamsungSmartThingsEntity, RemoteEntity):
     _attr_has_entity_name = True
-    _attr_supported_features = RemoteEntityFeature.SEND_COMMAND
+    _attr_supported_features = _FEATURE_SEND_COMMAND
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
