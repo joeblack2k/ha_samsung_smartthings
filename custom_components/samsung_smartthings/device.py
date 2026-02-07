@@ -6,6 +6,7 @@ import logging
 from typing import Any, Iterable
 
 from aiohttp import ClientResponseError
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     EXECUTE_ADVANCED_AUDIO,
@@ -430,6 +431,17 @@ class SmartThingsDevice:
         steps = (tgt_idx - cur_idx) % len(sources)
         for _ in range(steps):
             await self.send_command("samsungvd.audioInputSource", "setNextInputSource", arguments=None)
+            # Give the device a moment to process. We avoid polling status for each step
+            # to reduce SmartThings API rate-limit pressure.
             await asyncio.sleep(0.6)
-            status = await self.api.get_status(self.device_id)
-            self.update_runtime_status(status)
+
+        # Verify we actually reached the target (SmartThings sometimes accepts the command
+        # but does not change state, e.g. when eARC / D.IN is locked by the TV).
+        status = await self.api.get_status(self.device_id)
+        self.update_runtime_status(status)
+        after = self.get_attr("samsungvd.audioInputSource", "inputSource")
+        if after != source:
+            hint = ""
+            if after == "D.IN" or source == "D.IN":
+                hint = " (D.IN/eARC can be locked and not switchable via SmartThings)"
+            raise HomeAssistantError(f"SmartThings did not change input source (current={after}, target={source}){hint}")
