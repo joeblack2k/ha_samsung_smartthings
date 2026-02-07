@@ -55,7 +55,7 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         try:
-            await self.device.send_command("switch", "on", arguments=[])
+            await self.device.send_command("switch", "on", arguments=None)
         except ClientResponseError:
             # Some TVs cannot be powered on via the SmartThings cloud switch command.
             # Best-effort fallback: send a POWER key via remoteControl (toggle).
@@ -72,7 +72,7 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         try:
-            await self.device.send_command("switch", "off", arguments=[])
+            await self.device.send_command("switch", "off", arguments=None)
         except ClientResponseError:
             if self.device.has_capability("samsungvd.remoteControl"):
                 await self.device.send_command(
@@ -95,6 +95,7 @@ class _SoundbarExecuteSwitch(SamsungSmartThingsEntity, SwitchEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_visible_default = False
 
     _state_attr: str  # override in subclass
     _set_method: str  # method name on device

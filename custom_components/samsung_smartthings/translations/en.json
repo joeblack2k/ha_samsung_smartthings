@@ -3,26 +3,34 @@
     "step": {
       "user": {
         "title": "Samsung SmartThings (Cloud)",
-        "description": "Enter your SmartThings Personal Access Token. This integration talks to the SmartThings cloud API.",
+        "description": "Enter your SmartThings Personal Access Token. This integration creates a hub entry and automatically adds all devices found in your SmartThings account.",
         "data": {
-          "token": "Personal Access Token",
-          "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)",
-          "scan_interval": "Polling interval (seconds)",
-          "add_all": "Add all Samsung devices (Frame TVs, soundbars, etc.)"
+          "token": "Personal Access Token"
         }
-      },
-      "device": {
-        "title": "Select device",
-        "description": "Pick the device to add as a Home Assistant device."
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to SmartThings.",
       "invalid_auth": "Invalid token.",
-      "invalid_device": "Invalid device selection."
+      "invalid_scan_interval": "Invalid polling interval.",
+      "invalid_discovery_interval": "Invalid discovery interval."
     },
     "abort": {
-      "already_configured": "All Samsung devices are already configured."
+      "already_configured": "This SmartThings account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)",
+          "scan_interval": "Polling interval (seconds)",
+          "discovery_interval": "Device discovery interval (seconds)",
+          "include_non_samsung": "Include non-Samsung devices",
+          "manage_diagnostics": "Hide/disable diagnostic entities by default"
+        }
+      }
     }
   }
 }

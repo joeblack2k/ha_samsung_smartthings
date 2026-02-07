@@ -134,6 +134,30 @@ launch_app:
       selector:
         text: {}
 
+set_art_mode:
+  name: Set Art Mode
+  description: Best-effort Art/Ambient mode. Tries multiple SmartThings methods depending on the TV model/account.
+  fields:
+    device_id:
+      name: Device ID
+      description: SmartThings device id. Optional if you target an entity_id.
+      required: false
+      selector:
+        text: {}
+    entity_id:
+      name: Entity ID
+      description: Any entity created by this integration. Optional if you provide device_id.
+      required: false
+      selector:
+        entity: {}
+    "on":
+      name: On
+      description: Turn Art Mode on (true). Off is best-effort.
+      required: false
+      default: true
+      selector:
+        boolean: {}
+
 set_ambient_content:
   name: Set ambient content
   description: Set ambient/art content on The Frame (advanced). Data must be a JSON object accepted by SmartThings.

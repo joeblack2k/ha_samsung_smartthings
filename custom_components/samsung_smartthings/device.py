@@ -32,11 +32,19 @@ def _cap_key(cap_id: str, version: int) -> str:
 class SmartThingsDevice:
     """Helper around SmartThings device + status payloads."""
 
-    def __init__(self, api: SmartThingsApi, device_id: str, *, expose_all: bool) -> None:
+    def __init__(
+        self,
+        api: SmartThingsApi,
+        device_id: str,
+        *,
+        expose_all: bool,
+        device: dict[str, Any] | None = None,
+    ) -> None:
         self.api = api
         self.device_id = device_id
         self.expose_all = expose_all
         self.runtime: DeviceRuntime | None = None
+        self._device_prefetch = device if isinstance(device, dict) else None
 
         # Serialize outgoing commands per device to reduce 409 conflicts.
         self._cmd_lock = asyncio.Lock()
@@ -57,16 +65,16 @@ class SmartThingsDevice:
         self._sb_last_execute_poll: float = 0.0
 
     async def async_init(self) -> None:
-        device = await self.api.get_device(self.device_id)
-        status = await self.api.get_status(self.device_id)
+        # Prefer already-fetched device payload (from /devices list) to avoid extra calls.
+        device = self._device_prefetch or await self.api.get_device(self.device_id)
 
+        # Don't fetch status during config entry setup; the coordinator will do it and
+        # handle SmartThings rate limits/backoff. Start with empty status.
+        status: dict[str, Any] = {}
+
+        # Capability definitions are global and costly to fetch (and SmartThings rate-limits).
+        # We keep them empty by default and rely on status payload + curated mappings.
         cap_defs: dict[str, dict[str, Any]] = {}
-        for cap_id, ver in self.iter_capabilities(device):
-            try:
-                cap_defs[_cap_key(cap_id, ver)] = await self.api.get_capability_def(cap_id, ver)
-            except Exception:
-                # Don't fail setup if one cap def fetch fails.
-                cap_defs[_cap_key(cap_id, ver)] = {}
 
         self.runtime = DeviceRuntime(
             device_id=self.device_id,
@@ -225,12 +233,72 @@ class SmartThingsDevice:
         """True if device is a Samsung OCF soundbar (has audioInputSource but not tvChannel)."""
         return self.has_capability("samsungvd.audioInputSource") and not self.has_capability("tvChannel")
 
+    def is_frame_tv(self) -> bool:
+        """Best-effort identification of The Frame TVs."""
+        cat = self.get_attr("samsungvd.deviceCategory", "category")
+        if isinstance(cat, str) and cat.lower() == "frametv":
+            return True
+        # fallback: model number prefix
+        mn = self.get_attr("ocf", "mnmo")
+        if isinstance(mn, str) and mn.upper().startswith("QE") and "LS03" in mn.upper():
+            return True
+        return False
+
+    async def set_art_mode(self) -> None:
+        """Best-effort Art/Ambient mode enable.
+
+        SmartThings is inconsistent across models/accounts. Try:
+        1) samsungvd.ambient / ambient18 setAmbientOn
+        2) custom.launchapp launchApp(None, "Ambient Mode") and other common names
+        """
+        # Try the dedicated ambient capability first.
+        for cap in ("samsungvd.ambient", "samsungvd.ambient18"):
+            if not self.has_capability(cap):
+                continue
+            try:
+                await self.send_command(cap, "setAmbientOn", arguments=None)
+                return
+            except ClientResponseError as exc:
+                # Many Frame TVs return 422 NOT_FOUND even though the capability exists.
+                if exc.status in (400, 404, 422):
+                    pass
+                else:
+                    raise
+
+        # Fallback: launch app by name (requires placeholder for optional appId).
+        if self.has_capability("custom.launchapp"):
+            for name in ("Ambient Mode", "Art Mode", "Art", "Ambient"):
+                try:
+                    await self.send_command("custom.launchapp", "launchApp", arguments=[None, name])
+                    return
+                except ClientResponseError as exc:
+                    if exc.status in (400, 404, 422):
+                        continue
+                    raise
+
+        raise RuntimeError("Art mode not supported by SmartThings for this device/account")
+
+    async def exit_art_mode(self) -> None:
+        """Best-effort to exit Art Mode (not reliably supported)."""
+        # If remoteControl exists, HOME usually exits art mode.
+        if self.has_capability("samsungvd.remoteControl"):
+            await self.send_command("samsungvd.remoteControl", "send", arguments=["HOME", "PRESS_AND_RELEASED"])
+            return
+        # Otherwise no safe generic method.
+        raise RuntimeError("Exit art mode is not supported")
+
     async def execute_query(self, href: str) -> dict[str, Any]:
         """Send an execute query and read the payload from execute.data.value."""
         await self.send_command("execute", "execute", arguments=[href])
         await asyncio.sleep(0.5)
-        status = await self.api.get_status(self.device_id)
-        self.update_runtime_status(status)
+        try:
+            status = await self.api.get_status(self.device_id)
+            self.update_runtime_status(status)
+        except ClientResponseError as exc:
+            # If rate-limited, keep last-known state and try again on next poll.
+            if exc.status == 429:
+                return {}
+            raise
 
         main = {}
         if isinstance(status, dict):
@@ -296,6 +364,12 @@ class SmartThingsDevice:
                 self._sb_bass_mode = payload.get("x.com.samsung.networkaudio.bassboost")
                 self._sb_voice_amplifier = payload.get("x.com.samsung.networkaudio.voiceamplifier")
 
+        except ClientResponseError as exc:
+            # Don't permanently disable execute features due to transient rate-limits.
+            if exc.status == 429:
+                return
+            _LOGGER.debug("Execute-based features failed for %s (status=%s)", self.device_id, exc.status)
+            self._sb_execute_supported = False
         except Exception:
             _LOGGER.debug("Execute-based features not available for %s", self.device_id)
             self._sb_execute_supported = False
@@ -355,7 +429,7 @@ class SmartThingsDevice:
         tgt_idx = sources.index(source)
         steps = (tgt_idx - cur_idx) % len(sources)
         for _ in range(steps):
-            await self.send_command("samsungvd.audioInputSource", "setNextInputSource", arguments=[])
+            await self.send_command("samsungvd.audioInputSource", "setNextInputSource", arguments=None)
             await asyncio.sleep(0.6)
             status = await self.api.get_status(self.device_id)
             self.update_runtime_status(status)

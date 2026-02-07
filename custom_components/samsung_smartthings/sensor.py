@@ -90,6 +90,7 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_visible_default = False
 
     def __init__(self, coordinator: SmartThingsCoordinator, desc: SmartThingsAttr) -> None:
         super().__init__(coordinator)

@@ -15,6 +15,17 @@ from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
 
 
+class _FeatureMask(int):
+    """Int mask that also supports `feature in mask` membership checks."""
+
+    def __contains__(self, item: object) -> bool:
+        try:
+            iv = int(item)
+        except Exception:
+            return False
+        return (int(self) & iv) == iv
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry,
@@ -59,7 +70,7 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         if self.device.has_capability("mediaTrackControl"):
             f |= F.NEXT_TRACK | F.PREVIOUS_TRACK
         # Source selection is handled via select entity; keep here minimal.
-        return f
+        return _FeatureMask(f)
 
     @property
     def state(self) -> str | None:
@@ -99,18 +110,18 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         return vi / 100.0
 
     async def async_turn_on(self) -> None:
-        await self.device.send_command("switch", "on", arguments=[])
+        await self.device.send_command("switch", "on", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
-        await self.device.send_command("switch", "off", arguments=[])
+        await self.device.send_command("switch", "off", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
         if mute:
-            await self.device.send_command("audioMute", "mute", arguments=[])
+            await self.device.send_command("audioMute", "mute", arguments=None)
         else:
-            await self.device.send_command("audioMute", "unmute", arguments=[])
+            await self.device.send_command("audioMute", "unmute", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_set_volume_level(self, volume: float) -> None:
@@ -120,30 +131,30 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         await self.coordinator.async_request_refresh()
 
     async def async_volume_up(self) -> None:
-        await self.device.send_command("audioVolume", "volumeUp", arguments=[])
+        await self.device.send_command("audioVolume", "volumeUp", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_volume_down(self) -> None:
-        await self.device.send_command("audioVolume", "volumeDown", arguments=[])
+        await self.device.send_command("audioVolume", "volumeDown", arguments=None)
         await self.coordinator.async_request_refresh()
 
     # Playback (TV may expose but might not do anything; safe to call)
     async def async_media_play(self) -> None:
-        await self.device.send_command("mediaPlayback", "play", arguments=[])
+        await self.device.send_command("mediaPlayback", "play", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_media_pause(self) -> None:
-        await self.device.send_command("mediaPlayback", "pause", arguments=[])
+        await self.device.send_command("mediaPlayback", "pause", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_media_stop(self) -> None:
-        await self.device.send_command("mediaPlayback", "stop", arguments=[])
+        await self.device.send_command("mediaPlayback", "stop", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_media_next_track(self) -> None:
-        await self.device.send_command("mediaTrackControl", "nextTrack", arguments=[])
+        await self.device.send_command("mediaTrackControl", "nextTrack", arguments=None)
         await self.coordinator.async_request_refresh()
 
     async def async_media_previous_track(self) -> None:
-        await self.device.send_command("mediaTrackControl", "previousTrack", arguments=[])
+        await self.device.send_command("mediaTrackControl", "previousTrack", arguments=None)
         await self.coordinator.async_request_refresh()

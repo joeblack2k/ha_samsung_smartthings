@@ -233,6 +233,7 @@ class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_visible_default = False
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
@@ -265,6 +266,7 @@ class SoundbarEQPresetSelect(SamsungSmartThingsEntity, SelectEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_visible_default = False
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
@@ -297,6 +299,7 @@ class SoundbarRearSpeakerModeSelect(SamsungSmartThingsEntity, SelectEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_visible_default = False
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)

@@ -21,9 +21,9 @@ class SamsungSmartThingsEntity(CoordinatorEntity[SmartThingsCoordinator]):
         dev = rt.device
         return DeviceInfo(
             identifiers={(DOMAIN, self.device.device_id)},
+            via_device=(DOMAIN, self.coordinator.hub_id),
             name=dev.get("label") or dev.get("name") or self.device.device_id,
             manufacturer=dev.get("manufacturerName"),
             model=self.device.get_attr("ocf", "mnmo") or dev.get("model") or dev.get("deviceTypeName"),
             sw_version=self.device.get_attr("ocf", "mnfv"),
         )
-
