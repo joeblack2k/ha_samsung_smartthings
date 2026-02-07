@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
 from .naming import attribute_label, capability_label, humanize_token
@@ -29,6 +29,16 @@ async def async_setup_entry(
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
+
+    # Local soundbar entry: small set of useful read-only sensors.
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL:
+        coordinator = domain["coordinator"]
+        host = domain.get("host") or "soundbar"
+        entities.append(SoundbarLocalSimpleSensor(coordinator, host, "codec", "Audio Codec", "codec"))
+        entities.append(SoundbarLocalSimpleSensor(coordinator, host, "identifier", "Identifier", "identifier", entity_category=EntityCategory.DIAGNOSTIC))
+        async_add_entities(entities, True)
+        return
+
     for it in domain.get("items") or []:
         coordinator: SmartThingsCoordinator = it["coordinator"]
         dev = coordinator.device
@@ -138,3 +148,36 @@ class SamsungSmartThingsSimpleSensor(SamsungSmartThingsEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self._fn(self.device)
+
+
+class SoundbarLocalSimpleSensor(SensorEntity):
+    """Simple sensor backed by the local soundbar coordinator data."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator,
+        host: str,
+        key: str,
+        name: str,
+        data_key: str,
+        *,
+        entity_category: EntityCategory | None = None,
+    ) -> None:
+        self._coordinator = coordinator
+        self._data_key = data_key
+        self._attr_unique_id = f"soundbar_local_{host}_{key}"
+        self._attr_name = name
+        self._attr_entity_category = entity_category
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.last_update_success
+
+    @property
+    def native_value(self) -> Any:
+        return self._coordinator.data.get(self._data_key)

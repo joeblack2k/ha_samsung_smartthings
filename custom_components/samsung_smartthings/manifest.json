@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/joeblack2k/ha_samsung_smartthings/issues",
   "loggers": ["custom_components.samsung_smartthings"],
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.3.1"
 }
