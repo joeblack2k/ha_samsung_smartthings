@@ -6,7 +6,8 @@
         "description": "Enter your SmartThings Personal Access Token. This integration talks to the SmartThings cloud API.",
         "data": {
           "token": "Personal Access Token",
-          "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)"
+          "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)",
+          "scan_interval": "Polling interval (seconds)"
         }
       },
       "device": {
@@ -21,4 +22,3 @@
     }
   }
 }
-

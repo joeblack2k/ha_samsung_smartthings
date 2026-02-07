@@ -65,7 +65,20 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        return self.device.get_attr(self.desc.capability, self.desc.attribute)
+        v = self.device.get_attr(self.desc.capability, self.desc.attribute)
+        # Avoid invalid HA sensor states for dict/list: keep state short, put full value in attributes.
+        if isinstance(v, list):
+            return f"list({len(v)})"
+        if isinstance(v, dict):
+            return f"dict({len(v)})"
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        v = self.device.get_attr(self.desc.capability, self.desc.attribute)
+        if isinstance(v, (list, dict)):
+            return {"value": v}
+        return None
 
 
 class SamsungSmartThingsSimpleSensor(SamsungSmartThingsEntity, SensorEntity):
@@ -81,4 +94,3 @@ class SamsungSmartThingsSimpleSensor(SamsungSmartThingsEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self._fn(self.device)
-

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from homeassistant.core import HomeAssistant
@@ -12,12 +13,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class SmartThingsCoordinator(DataUpdateCoordinator[dict]):
-    def __init__(self, hass: HomeAssistant, device: SmartThingsDevice) -> None:
+    def __init__(self, hass: HomeAssistant, device: SmartThingsDevice, *, scan_interval: int) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{device.device_id}",
-            update_interval=None,  # use HA default (platforms will set) or set later
+            update_interval=dt.timedelta(seconds=max(5, int(scan_interval))),
         )
         self.device = device
 
@@ -29,4 +30,3 @@ class SmartThingsCoordinator(DataUpdateCoordinator[dict]):
             return {"device": dev, "status": status}
         except Exception as err:
             raise UpdateFailed(str(err)) from err
-

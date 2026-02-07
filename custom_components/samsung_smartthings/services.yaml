@@ -2,6 +2,13 @@ raw_command:
   name: Raw SmartThings command
   description: Send a raw capability command to the device. This is the universal escape hatch for new/unknown capabilities.
   fields:
+    device_id:
+      name: Device ID
+      description: SmartThings device id. Optional if you target an entity_id.
+      example: 42bd98c9-56ca-15fc-f84d-85e193f951a5
+      required: false
+      selector:
+        text: {}
     component:
       name: Component
       description: SmartThings component (usually `main`).
@@ -28,4 +35,3 @@ raw_command:
       required: false
       selector:
         text: {}
-

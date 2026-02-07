@@ -49,43 +49,95 @@ async def async_setup_entry(
 
 
 def _picture_mode_desc() -> SmartThingsSelect:
+    def opts(d):
+        lst = d.get_attr("custom.picturemode", "supportedPictureModes")
+        if isinstance(lst, list) and all(isinstance(x, str) for x in lst):
+            return lst
+        m = d.get_attr("custom.picturemode", "supportedPictureModesMap")
+        out = []
+        if isinstance(m, list):
+            for it in m:
+                if isinstance(it, dict) and isinstance(it.get("name"), str):
+                    out.append(it["name"])
+        return out
+
     return SmartThingsSelect(
         capability="custom.picturemode",
         attribute="pictureMode",
         command="setPictureMode",
         arg_index=0,
         name="Picture Mode",
-        options_fn=lambda d: d.get_attr("custom.picturemode", "supportedPictureModes") or [],
+        options_fn=opts,
         current_fn=lambda d: d.get_attr("custom.picturemode", "pictureMode"),
         to_args_fn=lambda option, d: [option],
     )
 
 
 def _sound_mode_desc() -> SmartThingsSelect:
+    def opts(d):
+        lst = d.get_attr("custom.soundmode", "supportedSoundModes")
+        if isinstance(lst, list) and all(isinstance(x, str) for x in lst):
+            return lst
+        m = d.get_attr("custom.soundmode", "supportedSoundModesMap")
+        out = []
+        if isinstance(m, list):
+            for it in m:
+                if isinstance(it, dict) and isinstance(it.get("name"), str):
+                    out.append(it["name"])
+        return out
+
     return SmartThingsSelect(
         capability="custom.soundmode",
         attribute="soundMode",
         command="setSoundMode",
         arg_index=0,
         name="Sound Mode",
-        options_fn=lambda d: d.get_attr("custom.soundmode", "supportedSoundModes") or [],
+        options_fn=opts,
         current_fn=lambda d: d.get_attr("custom.soundmode", "soundMode"),
         to_args_fn=lambda option, d: [option],
     )
 
 
 def _samsung_input_source_desc() -> SmartThingsSelect:
-    def opts(d):
+    def _map(d):
         m = d.get_attr("samsungvd.mediaInputSource", "supportedInputSourcesMap") or []
-        out = []
+        out: list[tuple[str, str]] = []
         if isinstance(m, list):
             for it in m:
-                if isinstance(it, dict) and isinstance(it.get("id"), str):
-                    out.append(it["id"])
+                if not isinstance(it, dict):
+                    continue
+                i = it.get("id")
+                n = it.get("name")
+                if isinstance(i, str) and i and isinstance(n, str) and n:
+                    out.append((i, n))
+        return out
+
+    def opts(d):
+        pairs = _map(d)
+        # Prefer friendly names, but keep uniqueness by suffixing id when needed.
+        names = [n for _i, n in pairs]
+        dup = {n for n in names if names.count(n) > 1}
+        out = []
+        for i, n in pairs:
+            out.append(f"{n} ({i})" if n in dup else n)
         return out
 
     def cur(d):
-        return d.get_attr("samsungvd.mediaInputSource", "inputSource")
+        cur_id = d.get_attr("samsungvd.mediaInputSource", "inputSource")
+        if not isinstance(cur_id, str):
+            return None
+        for i, n in _map(d):
+            if i == cur_id:
+                return n
+        return cur_id
+
+    def to_args(option: str, d):
+        # option is either name or "name (id)"
+        pairs = _map(d)
+        for i, n in pairs:
+            if option == n or option == f"{n} ({i})":
+                return [i]
+        return [option]
 
     return SmartThingsSelect(
         capability="samsungvd.mediaInputSource",
@@ -95,7 +147,7 @@ def _samsung_input_source_desc() -> SmartThingsSelect:
         name="Input Source",
         options_fn=opts,
         current_fn=cur,
-        to_args_fn=lambda option, d: [option],
+        to_args_fn=to_args,
     )
 
 
@@ -122,4 +174,3 @@ class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
         args = self.desc.to_args_fn(option, self.device)
         await self.device.send_command(self.desc.capability, self.desc.command, arguments=args)
         await self.coordinator.async_request_refresh()
-

@@ -11,8 +11,10 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
     CONF_EXPOSE_ALL,
+    CONF_SCAN_INTERVAL,
     CONF_TOKEN,
     DEFAULT_EXPOSE_ALL,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 from .smartthings_api import SmartThingsApi
@@ -36,6 +38,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._token = user_input.get(CONF_TOKEN, "").strip()
             self._expose_all = bool(user_input.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
+            self._scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
             try:
                 self._devices = await _validate_token(self.hass, self._token)
                 return await self.async_step_device()
@@ -54,6 +57,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_TOKEN): str,
                     vol.Required(CONF_EXPOSE_ALL, default=DEFAULT_EXPOSE_ALL): bool,
+                    vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(int, vol.Range(min=5, max=300)),
                 }
             ),
             errors=errors,
@@ -97,6 +101,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_DEVICE_ID: device_id,
                     CONF_DEVICE_NAME: name or device_id,
                     CONF_EXPOSE_ALL: getattr(self, "_expose_all", DEFAULT_EXPOSE_ALL),
+                    CONF_SCAN_INTERVAL: getattr(self, "_scan_interval", DEFAULT_SCAN_INTERVAL),
                 }
                 title = data[CONF_DEVICE_NAME]
                 return self.async_create_entry(title=title, data=data)
@@ -112,4 +117,3 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
-

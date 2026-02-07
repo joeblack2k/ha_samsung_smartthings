@@ -73,6 +73,24 @@ async def async_setup_entry(
                 unique_suffix="ambient_on",
             )
         )
+    if dev.has_capability("samsungvd.ambient18"):
+        entities.append(
+            SamsungSmartThingsCommandButton(
+                coordinator,
+                SmartThingsButton(capability="samsungvd.ambient18", command="setAmbientOn", name="Ambient/Art Mode (v18)"),
+                unique_suffix="ambient18_on",
+            )
+        )
+
+    # Soundbar: next input source
+    if dev.has_capability("samsungvd.audioInputSource"):
+        entities.append(
+            SamsungSmartThingsCommandButton(
+                coordinator,
+                SmartThingsButton(capability="samsungvd.audioInputSource", command="setNextInputSource", name="Next Input Source"),
+                unique_suffix="next_input",
+            )
+        )
 
     # Generic "no-arg commands" when expose_all is enabled.
     if rt and rt.expose_all:
@@ -120,4 +138,3 @@ class SamsungSmartThingsCommandButton(SamsungSmartThingsEntity, ButtonEntity):
     async def async_press(self) -> None:
         await self.device.send_command(self.desc.capability, self.desc.command, arguments=self.desc.arguments)
         await self.coordinator.async_request_refresh()
-
