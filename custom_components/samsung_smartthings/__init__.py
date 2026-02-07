@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 
 from .const import (
     CONF_DEVICE_ID,
@@ -22,6 +25,124 @@ from .device import SmartThingsDevice
 from .smartthings_api import SmartThingsApi
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_samsung(d: dict) -> bool:
+    try:
+        return str(d.get("manufacturerName") or "").lower().startswith("samsung")
+    except Exception:
+        return False
+
+
+def _device_name(d: dict) -> str:
+    for k in ("label", "name"):
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    did = d.get("deviceId")
+    return did if isinstance(did, str) else "SmartThings Device"
+
+
+async def _discover_new_devices_for_token(
+    hass: HomeAssistant,
+    *,
+    token: str,
+    expose_all: bool,
+    scan_interval: int,
+) -> None:
+    """List devices for the SmartThings token and import new Samsung devices."""
+    # Re-check preferences live: only auto-add devices when the user has enabled
+    # "Enable newly added entities" for at least one entry using this token.
+    enabled_somewhere = False
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.data.get(CONF_TOKEN) == token and not e.pref_disable_new_entities:
+            enabled_somewhere = True
+            break
+    if not enabled_somewhere:
+        return
+
+    api = SmartThingsApi(hass, token)
+    devices = await api.list_devices()
+
+    existing: set[str] = set()
+    for e in hass.config_entries.async_entries(DOMAIN):
+        did = e.data.get(CONF_DEVICE_ID)
+        if isinstance(did, str) and did:
+            existing.add(did)
+        if isinstance(e.unique_id, str) and e.unique_id:
+            existing.add(e.unique_id)
+
+    for d in devices:
+        if not isinstance(d, dict) or not _is_samsung(d):
+            continue
+        did = d.get("deviceId")
+        if not isinstance(did, str) or not did:
+            continue
+        if did in existing:
+            continue
+        name = _device_name(d) or did
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={"source": config_entries.SOURCE_IMPORT},
+                data={
+                    CONF_TOKEN: token,
+                    CONF_DEVICE_ID: did,
+                    CONF_DEVICE_NAME: name,
+                    CONF_EXPOSE_ALL: expose_all,
+                    CONF_SCAN_INTERVAL: scan_interval,
+                },
+            )
+        )
+
+
+async def _ensure_device_discovery_task(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Start a background discovery loop once per SmartThings token."""
+    # Only do this when the user wants new entities enabled by default.
+    # The user expectation is that this also auto-adds any newly discovered devices.
+    if entry.pref_disable_new_entities:
+        return
+
+    token = entry.data.get(CONF_TOKEN)
+    if not isinstance(token, str) or not token:
+        return
+
+    expose_all = bool(entry.data.get(CONF_EXPOSE_ALL, True))
+    scan_interval = int(entry.data.get(CONF_SCAN_INTERVAL, 15))
+
+    dom = hass.data.setdefault(DOMAIN, {})
+    discovery = dom.setdefault("_discovery", {})
+    token_key = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+    if token_key in discovery:
+        # Update defaults to the most recent entry settings.
+        discovery[token_key]["expose_all"] = expose_all
+        discovery[token_key]["scan_interval"] = scan_interval
+        return
+
+    async def _loop() -> None:
+        # First run quickly, then hourly.
+        await asyncio.sleep(5)
+        while True:
+            try:
+                await _discover_new_devices_for_token(
+                    hass,
+                    token=token,
+                    expose_all=discovery[token_key]["expose_all"],
+                    scan_interval=discovery[token_key]["scan_interval"],
+                )
+            except Exception:
+                # Avoid spamming logs if token is revoked/expired.
+                _LOGGER.debug("[%s] discovery scan failed", DOMAIN, exc_info=True)
+            await asyncio.sleep(3600)
+
+    task = hass.async_create_task(_loop())
+
+    def _cancel(_event) -> None:
+        task.cancel()
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cancel)
+    discovery[token_key] = {"task": task, "expose_all": expose_all, "scan_interval": scan_interval}
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {})
@@ -142,6 +263,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     return True
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Never log secrets (token is stored in entry.data).
     if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -214,6 +336,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    hass.async_create_task(_ensure_device_discovery_task(hass, entry))
     return True
 
 
