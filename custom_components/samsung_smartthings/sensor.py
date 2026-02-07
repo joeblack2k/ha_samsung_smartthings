@@ -72,6 +72,8 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
             return f"list({len(v)})"
         if isinstance(v, dict):
             return f"dict({len(v)})"
+        if isinstance(v, str) and len(v) > 240:
+            return v[:240] + "..."
         return v
 
     @property
@@ -79,6 +81,8 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
         v = self.device.get_attr(self.desc.capability, self.desc.attribute, component=self.desc.component)
         if isinstance(v, (list, dict)):
             return {"value": v}
+        if isinstance(v, str) and len(v) > 240:
+            return {"value_full": v}
         return None
 
 
