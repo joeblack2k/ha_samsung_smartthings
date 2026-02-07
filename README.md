@@ -27,13 +27,19 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 2. Search for `Samsung SmartThings (Cloud)`
 3. Paste a SmartThings Personal Access Token
 4. Select the device to add
+5. Choose a polling interval (default 15s)
 
 ## Services
 
 - `samsung_smartthings.raw_command`: send any capability command (JSON args supported)
+- `samsung_smartthings.play_track`: audioNotification.playTrack wrapper (soundbars)
+- `samsung_smartthings.play_track_and_restore`: audioNotification.playTrackAndRestore wrapper
+- `samsung_smartthings.play_track_and_resume`: audioNotification.playTrackAndResume wrapper
+- `samsung_smartthings.launch_app`: custom.launchapp.launchApp wrapper (TVs)
+- `samsung_smartthings.set_ambient_content`: samsungvd.ambientContent.setAmbientContent wrapper (advanced)
 
 ## Notes
 
 - Cloud polling means latency and rate limiting can happen, especially on `execute`/OCF models.
 - SmartThings TVs often report volume as `0`; this is a SmartThings-side limitation.
-
+- If you enable “Expose all attributes and no-arg commands”, you will get a *lot* of sensors/buttons (by design).
