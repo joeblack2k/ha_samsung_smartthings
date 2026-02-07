@@ -5,11 +5,13 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .naming import attribute_label, capability_label, humanize_token
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -31,11 +33,20 @@ async def async_setup_entry(
         coordinator: SmartThingsCoordinator = it["coordinator"]
         dev = coordinator.device
 
+        # Avoid duplicating the curated sensors with generic attribute sensors.
+        curated = {
+            ("main", "ocf", "mnmo"),
+            ("main", "ocf", "mnfv"),
+            ("main", "samsungvd.thingStatus", "status"),
+        }
+
         # Expose *all* attributes as sensors when enabled.
         if dev.runtime and dev.runtime.expose_all:
             seen: set[tuple[str, str, str]] = set()
             for comp, cap, attr, _val, unit in dev.flatten_attributes():
                 key = (comp, cap, attr)
+                if key in curated:
+                    continue
                 if key in seen:
                     continue
                 seen.add(key)
@@ -47,21 +58,48 @@ async def async_setup_entry(
                 )
 
         # A few useful "always-on" device info sensors (even if expose_all is off).
-        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnmo", "OCF Model", lambda d: d.get_attr("ocf", "mnmo")))
-        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "ocf_mnfv", "Firmware", lambda d: d.get_attr("ocf", "mnfv")))
-        entities.append(SamsungSmartThingsSimpleSensor(coordinator, "thing_status", "Thing Status", lambda d: d.get_attr("samsungvd.thingStatus", "status")))
+        entities.append(
+            SamsungSmartThingsSimpleSensor(
+                coordinator,
+                "model_number",
+                "Model Number",
+                lambda d: d.get_attr("ocf", "mnmo"),
+            )
+        )
+        entities.append(
+            SamsungSmartThingsSimpleSensor(
+                coordinator,
+                "firmware_version",
+                "Firmware Version",
+                lambda d: d.get_attr("ocf", "mnfv"),
+            )
+        )
+        entities.append(
+            SamsungSmartThingsSimpleSensor(
+                coordinator,
+                "status",
+                "Status",
+                lambda d: d.get_attr("samsungvd.thingStatus", "status"),
+            )
+        )
 
     async_add_entities(entities)
 
 
 class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: SmartThingsCoordinator, desc: SmartThingsAttr) -> None:
         super().__init__(coordinator)
         self.desc = desc
         self._attr_unique_id = f"{self.device.device_id}_attr_{desc.component}_{desc.capability}_{desc.attribute}"
-        self._attr_name = f"{desc.component}.{desc.capability}.{desc.attribute}"
+        # Prefer human-friendly names; keep component/capability context.
+        comp_prefix = "" if desc.component == "main" else f"{humanize_token(desc.component)}: "
+        cap = capability_label(desc.capability)
+        attr = attribute_label(desc.capability, desc.attribute)
+        self._attr_name = f"{comp_prefix}{cap}: {attr}"
         self._attr_native_unit_of_measurement = desc.unit
 
     @property

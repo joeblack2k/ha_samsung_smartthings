@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .naming import capability_label, command_label
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -18,6 +19,7 @@ class SmartThingsButton:
     command: str
     name: str
     arguments: list[Any] | None = None
+    enabled_by_default: bool = True
 
 
 async def async_setup_entry(
@@ -32,44 +34,20 @@ async def async_setup_entry(
         dev = coordinator.device
         rt = dev.runtime
 
-        # TV remote keys -> buttons
-        if dev.has_capability("samsungvd.remoteControl") and rt:
-            # Try to read enum from cap def.
-            keys: list[str] = []
-            for k, capdef in rt.capability_defs.items():
-                if not k.startswith("samsungvd.remoteControl/"):
-                    continue
-                cmds = capdef.get("commands") or {}
-                send = cmds.get("send") or {}
-                args = send.get("arguments") or []
-                if args and isinstance(args, list) and isinstance(args[0], dict):
-                    schema = args[0].get("schema") or {}
-                    enum = schema.get("enum")
-                    if isinstance(enum, list):
-                        keys = [x for x in enum if isinstance(x, str)]
-                break
-            if not keys:
-                keys = ["HOME", "BACK", "OK", "UP", "DOWN", "LEFT", "RIGHT", "SOURCE"]
-            for key in keys:
-                entities.append(
-                    SamsungSmartThingsCommandButton(
-                        coordinator,
-                        SmartThingsButton(
-                            capability="samsungvd.remoteControl",
-                            command="send",
-                            name=f"Remote {key}",
-                            arguments=[key, "PRESS_AND_RELEASED"],
-                        ),
-                        unique_suffix=f"remote_{key}",
-                    )
-                )
+        # Remote keys are exposed as a proper `remote` entity (not buttons).
 
         # Ambient / Frame mode trigger
         if dev.has_capability("samsungvd.ambient"):
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
-                    SmartThingsButton(capability="samsungvd.ambient", command="setAmbientOn", name="Ambient/Art Mode"),
+                    SmartThingsButton(
+                        capability="samsungvd.ambient",
+                        command="setAmbientOn",
+                        name="Ambient/Art Mode",
+                        arguments=[],
+                        enabled_by_default=True,
+                    ),
                     unique_suffix="ambient_on",
                 )
             )
@@ -77,7 +55,13 @@ async def async_setup_entry(
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
-                    SmartThingsButton(capability="samsungvd.ambient18", command="setAmbientOn", name="Ambient/Art Mode (v18)"),
+                    SmartThingsButton(
+                        capability="samsungvd.ambient18",
+                        command="setAmbientOn",
+                        name="Ambient/Art Mode",
+                        arguments=[],
+                        enabled_by_default=True,
+                    ),
                     unique_suffix="ambient18_on",
                 )
             )
@@ -87,17 +71,44 @@ async def async_setup_entry(
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
-                    SmartThingsButton(capability="samsungvd.audioInputSource", command="setNextInputSource", name="Next Input Source"),
+                    SmartThingsButton(
+                        capability="samsungvd.audioInputSource",
+                        command="setNextInputSource",
+                        name="Next Input Source",
+                        arguments=[],
+                        enabled_by_default=True,
+                    ),
                     unique_suffix="next_input",
                 )
             )
 
         # Generic "no-arg commands" when expose_all is enabled.
         if rt and rt.expose_all:
+            # Skip commands already covered by nicer entities (media_player/select/remote/services).
+            skip_caps = {
+                "switch",
+                "audioMute",
+                "audioVolume",
+                "mediaPlayback",
+                "mediaTrackControl",
+                "tvChannel",
+                "custom.picturemode",
+                "custom.soundmode",
+                "custom.launchapp",
+                "audioNotification",
+                "samsungvd.remoteControl",
+                "samsungvd.mediaInputSource",
+                "mediaInputSource",
+                "samsungvd.ambient",
+                "samsungvd.ambient18",
+                "samsungvd.audioInputSource",
+            }
             for key, capdef in rt.capability_defs.items():
                 if not isinstance(capdef, dict):
                     continue
                 cap_id = capdef.get("id")
+                if cap_id in skip_caps:
+                    continue
                 cmds = capdef.get("commands")
                 if not isinstance(cap_id, str) or not isinstance(cmds, dict):
                     continue
@@ -110,7 +121,13 @@ async def async_setup_entry(
                         entities.append(
                             SamsungSmartThingsCommandButton(
                                 coordinator,
-                                SmartThingsButton(capability=cap_id, command=cmd_name, name=f"{cap_id}.{cmd_name}"),
+                                SmartThingsButton(
+                                    capability=cap_id,
+                                    command=cmd_name,
+                                    name=f"{capability_label(cap_id)}: {command_label(cap_id, cmd_name)}",
+                                    arguments=[],
+                                    enabled_by_default=False,
+                                ),
                                 unique_suffix=f"cmd_{cap_id}_{cmd_name}",
                             )
                         )
@@ -118,7 +135,13 @@ async def async_setup_entry(
                         entities.append(
                             SamsungSmartThingsCommandButton(
                                 coordinator,
-                                SmartThingsButton(capability=cap_id, command=cmd_name, name=f"{cap_id}.{cmd_name}"),
+                                SmartThingsButton(
+                                    capability=cap_id,
+                                    command=cmd_name,
+                                    name=f"{capability_label(cap_id)}: {command_label(cap_id, cmd_name)}",
+                                    arguments=[],
+                                    enabled_by_default=False,
+                                ),
                                 unique_suffix=f"cmd_{cap_id}_{cmd_name}",
                             )
                         )
@@ -134,7 +157,20 @@ class SamsungSmartThingsCommandButton(SamsungSmartThingsEntity, ButtonEntity):
         self.desc = desc
         self._attr_unique_id = f"{self.device.device_id}_{unique_suffix}"
         self._attr_name = desc.name
+        self._attr_entity_registry_enabled_default = bool(desc.enabled_by_default)
 
     async def async_press(self) -> None:
-        await self.device.send_command(self.desc.capability, self.desc.command, arguments=self.desc.arguments)
-        await self.coordinator.async_request_refresh()
+        try:
+            await self.device.send_command(self.desc.capability, self.desc.command, arguments=self.desc.arguments)
+        except Exception:
+            # Avoid noisy UI toasts for optional/advanced buttons; log in HA logs.
+            import logging
+            _LOGGER = logging.getLogger(__name__)
+            _LOGGER.exception(
+                "Button command failed: device=%s cap=%s cmd=%s",
+                self.device.device_id,
+                self.desc.capability,
+                self.desc.command,
+            )
+        finally:
+            await self.coordinator.async_request_refresh()

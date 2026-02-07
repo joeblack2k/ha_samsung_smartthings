@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from typing import Any, Iterable
+
+from aiohttp import ClientResponseError
 
 from .models import DeviceRuntime
 from .smartthings_api import SmartThingsApi
@@ -138,7 +141,15 @@ class SmartThingsDevice:
         }
         if arguments is not None:
             cmd["arguments"] = arguments
-        await self.api.send_commands(self.device_id, [cmd])
+        try:
+            await self.api.send_commands(self.device_id, [cmd])
+        except ClientResponseError as exc:
+            # SmartThings can return 409 while a previous command is still being processed.
+            if exc.status in (409, 429):
+                await asyncio.sleep(1.0)
+                await self.api.send_commands(self.device_id, [cmd])
+            else:
+                raise
 
     async def raw_command_json(self, component: str, capability: str, command: str, args_json: str) -> None:
         args = None

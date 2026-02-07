@@ -27,6 +27,7 @@ async def async_setup_entry(
 
 class SamsungSmartThingsTvChannelText(SamsungSmartThingsEntity, TextEntity):
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
     _attr_native_min = 0
     _attr_native_max = 32
     _attr_pattern = ".*"

@@ -33,6 +33,7 @@ async def async_setup_entry(
 
 class SamsungSmartThingsVolumeNumber(SamsungSmartThingsEntity, NumberEntity):
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
     _attr_native_min_value = 0
     _attr_native_max_value = 100
     _attr_native_step = 1
@@ -58,6 +59,7 @@ class SamsungSmartThingsVolumeNumber(SamsungSmartThingsEntity, NumberEntity):
 
 class SamsungSmartThingsSoundFromModeNumber(SamsungSmartThingsEntity, NumberEntity):
     _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
     _attr_native_min_value = 0
     _attr_native_max_value = 10
     _attr_native_step = 1

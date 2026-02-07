@@ -6,6 +6,11 @@ from typing import Any
 from aiohttp import ClientResponseError
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     CONF_DEVICE_ID,
@@ -110,9 +115,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         others = [d for d in devices if d not in samsung]
         ordered = samsung + others
 
-        # Create a mapping deviceId -> label for HA UI.
-        # HA will return the key (device id), but display the value (label).
-        options: dict[str, str] = {}
+        # Use a selector so the UI shows human labels while storing the deviceId.
+        options: list[dict[str, str]] = []
         for d in ordered:
             did = d.get("deviceId")
             if not isinstance(did, str) or not did:
@@ -120,7 +124,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             label = d.get("label") or d.get("name") or did
             dtype = d.get("deviceTypeName") or ""
             opt = f"{label} [{dtype}] ({did[:8]})"
-            options[did] = opt
+            options.append({"label": opt, "value": did})
 
         if user_input is not None:
             device_id = user_input.get(CONF_DEVICE_ID)
@@ -151,7 +155,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="device",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_DEVICE_ID): vol.In(options),
+                    vol.Required(CONF_DEVICE_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                 }
             ),
             errors=errors,
