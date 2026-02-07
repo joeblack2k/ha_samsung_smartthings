@@ -26,10 +26,25 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 2. Search for `Samsung SmartThings (Cloud)`
 3. Choose the setup type:
    - `SmartThings Cloud (token)` (default)
-   - `Soundbar Local (LAN)` (optional, for supported 2024 soundbars)
-4. Paste a SmartThings Personal Access Token (Cloud) OR enter the soundbar IP (Local)
+   - `Soundbar Local (LAN)` (optional, for supported 2024 Wi-Fi soundbars)
+4. Paste a SmartThings Personal Access Token (Cloud) OR enter the soundbar IP address (Local)
 5. Cloud mode: the integration adds a single “hub” entry for that token and auto-discovers all Samsung devices on the account
 6. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
+
+### Soundbar Local (LAN) Setup (2024 Wi-Fi soundbars)
+
+This mode talks directly to the soundbar on your network (HTTPS JSON-RPC on port `1516`, typically a self-signed certificate).
+
+Requirements:
+- Supported model family: 2024-line Samsung Wi-Fi soundbars (e.g. `HW-Q990D`, `HW-Q930D`, etc.)
+- Soundbar connected to Wi-Fi and added to the SmartThings app
+- SmartThings app: enable **IP control** in the soundbar device settings
+
+Steps:
+1. Enable **IP control** in SmartThings for the soundbar
+2. Find the soundbar IP address (from your router/DHCP list or LAN discovery)
+3. In Home Assistant add integration -> choose `Soundbar Local (LAN)` -> enter the IP
+4. Leave `verify_ssl` off unless you installed a trusted certificate on the device
 
 ## Services
 
