@@ -35,3 +35,111 @@ raw_command:
       required: false
       selector:
         text: {}
+
+play_track:
+  name: Play track
+  description: Play a URI on devices that support `audioNotification` (typically soundbars/speakers).
+  fields:
+    device_id:
+      name: Device ID
+      description: SmartThings device id. Optional if you target an entity_id.
+      required: false
+      selector:
+        text: {}
+    uri:
+      name: URI
+      example: https://example.com/sound.mp3
+      required: true
+      selector:
+        text: {}
+    level:
+      name: Level
+      description: Optional volume level (0-100).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+
+play_track_and_restore:
+  name: Play track and restore
+  description: Play a URI and restore previous state (if supported).
+  fields:
+    device_id:
+      name: Device ID
+      required: false
+      selector:
+        text: {}
+    uri:
+      name: URI
+      required: true
+      selector:
+        text: {}
+    level:
+      name: Level
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+
+play_track_and_resume:
+  name: Play track and resume
+  description: Play a URI and resume previous playback (if supported).
+  fields:
+    device_id:
+      name: Device ID
+      required: false
+      selector:
+        text: {}
+    uri:
+      name: URI
+      required: true
+      selector:
+        text: {}
+    level:
+      name: Level
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+
+launch_app:
+  name: Launch app
+  description: Launch an app on Samsung TVs that support `custom.launchapp`.
+  fields:
+    device_id:
+      name: Device ID
+      required: false
+      selector:
+        text: {}
+    app_id:
+      name: App ID
+      required: false
+      selector:
+        text: {}
+    app_name:
+      name: App name
+      required: false
+      selector:
+        text: {}
+
+set_ambient_content:
+  name: Set ambient content
+  description: Set ambient/art content on The Frame (advanced). Data must be a JSON object accepted by SmartThings.
+  fields:
+    device_id:
+      name: Device ID
+      required: false
+      selector:
+        text: {}
+    data_json:
+      name: Data JSON
+      example: '{"appId":"...","contentId":"..."}'
+      required: true
+      selector:
+        text: {}

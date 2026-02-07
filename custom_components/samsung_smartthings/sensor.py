@@ -14,6 +14,7 @@ from .entity_base import SamsungSmartThingsEntity
 
 @dataclass(frozen=True, kw_only=True)
 class SmartThingsAttr:
+    component: str
     capability: str
     attribute: str
     unit: str | None
@@ -32,16 +33,16 @@ async def async_setup_entry(
 
     # Expose *all* attributes as sensors when enabled.
     if dev.runtime and dev.runtime.expose_all:
-        seen: set[tuple[str, str]] = set()
-        for cap, attr, _val, unit in dev.flatten_attributes():
-            key = (cap, attr)
+        seen: set[tuple[str, str, str]] = set()
+        for comp, cap, attr, _val, unit in dev.flatten_attributes():
+            key = (comp, cap, attr)
             if key in seen:
                 continue
             seen.add(key)
             entities.append(
                 SamsungSmartThingsAttrSensor(
                     coordinator,
-                    SmartThingsAttr(capability=cap, attribute=attr, unit=unit),
+                    SmartThingsAttr(component=comp, capability=cap, attribute=attr, unit=unit),
                 )
             )
 
@@ -59,13 +60,13 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
     def __init__(self, coordinator: SmartThingsCoordinator, desc: SmartThingsAttr) -> None:
         super().__init__(coordinator)
         self.desc = desc
-        self._attr_unique_id = f"{self.device.device_id}_attr_{desc.capability}_{desc.attribute}"
-        self._attr_name = f"{desc.capability}.{desc.attribute}"
+        self._attr_unique_id = f"{self.device.device_id}_attr_{desc.component}_{desc.capability}_{desc.attribute}"
+        self._attr_name = f"{desc.component}.{desc.capability}.{desc.attribute}"
         self._attr_native_unit_of_measurement = desc.unit
 
     @property
     def native_value(self) -> Any:
-        v = self.device.get_attr(self.desc.capability, self.desc.attribute)
+        v = self.device.get_attr(self.desc.capability, self.desc.attribute, component=self.desc.component)
         # Avoid invalid HA sensor states for dict/list: keep state short, put full value in attributes.
         if isinstance(v, list):
             return f"list({len(v)})"
@@ -75,7 +76,7 @@ class SamsungSmartThingsAttrSensor(SamsungSmartThingsEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        v = self.device.get_attr(self.desc.capability, self.desc.attribute)
+        v = self.device.get_attr(self.desc.capability, self.desc.attribute, component=self.desc.component)
         if isinstance(v, (list, dict)):
             return {"value": v}
         return None

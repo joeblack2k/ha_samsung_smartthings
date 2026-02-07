@@ -60,14 +60,20 @@ class SmartThingsDevice:
 
     # -------- status helpers --------
 
-    def _main(self) -> dict[str, Any]:
+    def _components(self) -> dict[str, Any]:
         if not self.runtime:
             return {}
         comps = self.runtime.status.get("components") if isinstance(self.runtime.status, dict) else None
         if not isinstance(comps, dict):
             return {}
-        main = comps.get("main")
-        return main if isinstance(main, dict) else {}
+        return comps
+
+    def _component(self, component: str) -> dict[str, Any]:
+        comp = self._components().get(component)
+        return comp if isinstance(comp, dict) else {}
+
+    def _main(self) -> dict[str, Any]:
+        return self._component("main")
 
     def has_capability(self, cap_id: str) -> bool:
         if not self.runtime:
@@ -79,8 +85,8 @@ class SmartThingsDevice:
                     return True
         return False
 
-    def get_attr(self, cap_id: str, attr: str) -> Any:
-        cap = self._main().get(cap_id)
+    def get_attr(self, cap_id: str, attr: str, *, component: str = "main") -> Any:
+        cap = self._component(component).get(cap_id)
         if not isinstance(cap, dict):
             return None
         node = cap.get(attr)
@@ -88,8 +94,8 @@ class SmartThingsDevice:
             return None
         return node.get("value")
 
-    def get_attr_unit(self, cap_id: str, attr: str) -> str | None:
-        cap = self._main().get(cap_id)
+    def get_attr_unit(self, cap_id: str, attr: str, *, component: str = "main") -> str | None:
+        cap = self._component(component).get(cap_id)
         if not isinstance(cap, dict):
             return None
         node = cap.get(attr)
@@ -98,18 +104,21 @@ class SmartThingsDevice:
         u = node.get("unit")
         return u if isinstance(u, str) else None
 
-    def flatten_attributes(self) -> list[tuple[str, str, Any, str | None]]:
-        """Return [(capability, attribute, value, unit)] for all main component attributes."""
-        out: list[tuple[str, str, Any, str | None]] = []
-        for cap_id, cap in self._main().items():
-            if not isinstance(cap_id, str) or not isinstance(cap, dict):
+    def flatten_attributes(self) -> list[tuple[str, str, str, Any, str | None]]:
+        """Return [(component, capability, attribute, value, unit)] for all components."""
+        out: list[tuple[str, str, str, Any, str | None]] = []
+        for comp_id, comp in self._components().items():
+            if not isinstance(comp_id, str) or not isinstance(comp, dict):
                 continue
-            for attr, node in cap.items():
-                if not isinstance(attr, str) or not isinstance(node, dict):
+            for cap_id, cap in comp.items():
+                if not isinstance(cap_id, str) or not isinstance(cap, dict):
                     continue
-                if "value" not in node:
-                    continue
-                out.append((cap_id, attr, node.get("value"), node.get("unit")))
+                for attr, node in cap.items():
+                    if not isinstance(attr, str) or not isinstance(node, dict):
+                        continue
+                    if "value" not in node:
+                        continue
+                    out.append((comp_id, cap_id, attr, node.get("value"), node.get("unit")))
         return out
 
     # -------- command helpers --------
@@ -143,4 +152,3 @@ class SmartThingsDevice:
             else:
                 args = [parsed]
         await self.send_command(capability, command, arguments=args, component=component)
-

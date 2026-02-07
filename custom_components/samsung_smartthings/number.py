@@ -24,6 +24,10 @@ async def async_setup_entry(
     if dev.has_capability("audioVolume") and dev.runtime and dev.runtime.expose_all:
         entities.append(SamsungSmartThingsVolumeNumber(coordinator))
 
+    # Soundbar: samsungvd.soundFrom mode (integer)
+    if dev.has_capability("samsungvd.soundFrom") and dev.runtime and dev.runtime.expose_all:
+        entities.append(SamsungSmartThingsSoundFromModeNumber(coordinator))
+
     async_add_entities(entities)
 
 
@@ -51,3 +55,27 @@ class SamsungSmartThingsVolumeNumber(SamsungSmartThingsEntity, NumberEntity):
         await self.device.send_command("audioVolume", "setVolume", arguments=[int(value)])
         await self.coordinator.async_request_refresh()
 
+
+class SamsungSmartThingsSoundFromModeNumber(SamsungSmartThingsEntity, NumberEntity):
+    _attr_has_entity_name = True
+    _attr_native_min_value = 0
+    _attr_native_max_value = 10
+    _attr_native_step = 1
+    _attr_mode = "slider"
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_number_sound_from_mode"
+        self._attr_name = "Sound From Mode"
+
+    @property
+    def native_value(self) -> float | None:
+        v = self.device.get_attr("samsungvd.soundFrom", "mode")
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.device.send_command("samsungvd.soundFrom", "setSoundFrom", arguments=[int(value)])
+        await self.coordinator.async_request_refresh()
