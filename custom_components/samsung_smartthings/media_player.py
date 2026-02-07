@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.media_player import MediaPlayerEntity
+from homeassistant.components.media_player import (
+    MediaPlayerDeviceClass,
+    MediaPlayerEntity,
+)
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature as F
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -10,11 +13,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
-
-try:
-    from homeassistant.components.media_player import DEVICE_CLASS_SPEAKER  # type: ignore
-except Exception:
-    DEVICE_CLASS_SPEAKER = "speaker"
 
 
 async def async_setup_entry(
@@ -37,7 +35,7 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         super().__init__(coordinator)
         self._attr_unique_id = f"{self.device.device_id}_media_player"
         self._attr_name = "Media"
-        self._attr_device_class = DEVICE_CLASS_SPEAKER
+        self._attr_device_class = MediaPlayerDeviceClass.SPEAKER
 
     @property
     def supported_features(self) -> int:

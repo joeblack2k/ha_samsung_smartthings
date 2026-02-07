@@ -44,7 +44,7 @@ _ATTRIBUTE_NAME_MAP: dict[tuple[str, str], str] = {
 
 def _split_camel(s: str) -> str:
     # "mobileCamSupported" -> "mobile Cam Supported"
-    s = re.sub(r"([a-z0-9])([A-Z])", r"\\1 \\2", s)
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", s)
     return s
 
 
@@ -54,7 +54,7 @@ def humanize_token(s: str) -> str:
         return s
     s = s.replace("_", " ")
     s = _split_camel(s)
-    s = re.sub(r"\\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
     return s[:1].upper() + s[1:]
 
 

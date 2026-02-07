@@ -15,7 +15,6 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
-    CONF_DEVICE_IDS,
     CONF_ADD_ALL,
     CONF_EXPOSE_ALL,
     CONF_SCAN_INTERVAL,
@@ -38,6 +37,13 @@ async def _validate_token(hass, token: str) -> list[dict[str, Any]]:
 def _is_samsung(d: dict[str, Any]) -> bool:
     return (d.get("manufacturerName") or "").lower().startswith("samsung")
 
+def _device_name(d: dict[str, Any]) -> str:
+    label = d.get("label") or d.get("name")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    did = d.get("deviceId")
+    return did if isinstance(did, str) else "SmartThings Device"
+
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -53,35 +59,60 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 self._devices = await _validate_token(self.hass, self._token)
                 if self._add_all:
-                    # Add all Samsung devices under a single config entry.
-                    device_ids = []
-                    for d in self._devices:
-                        if not isinstance(d, dict) or not _is_samsung(d):
-                            continue
-                        did = d.get("deviceId")
-                        if isinstance(did, str) and did:
-                            device_ids.append(did)
+                    # Add all Samsung devices as separate config entries.
+                    devices: list[dict[str, Any]] = [
+                        d for d in self._devices if isinstance(d, dict) and _is_samsung(d)
+                    ]
 
                     # Filter out already-configured device_ids.
                     existing: set[str] = set()
                     for e in self._async_current_entries():
-                        for did in (e.data.get(CONF_DEVICE_IDS) or []):
-                            if isinstance(did, str):
-                                existing.add(did)
                         did = e.data.get(CONF_DEVICE_ID)
                         if isinstance(did, str):
                             existing.add(did)
-                    device_ids = [d for d in device_ids if d not in existing]
-                    if not device_ids:
+
+                    todo: list[tuple[str, str]] = []
+                    for d in devices:
+                        did = d.get("deviceId")
+                        if not isinstance(did, str) or not did or did in existing:
+                            continue
+                        todo.append((did, _device_name(d)))
+
+                    if not todo:
                         return self.async_abort(reason="already_configured")
+
+                    # Keep deterministic order: by device name then device_id.
+                    todo.sort(key=lambda t: (t[1].lower(), t[0]))
+
+                    first_id, first_name = todo[0]
+
+                    # Spawn import flows for the remaining devices.
+                    for did, name in todo[1:]:
+                        self.hass.async_create_task(
+                            self.hass.config_entries.flow.async_init(
+                                DOMAIN,
+                                context={"source": config_entries.SOURCE_IMPORT},
+                                data={
+                                    CONF_TOKEN: self._token,
+                                    CONF_DEVICE_ID: did,
+                                    CONF_DEVICE_NAME: name or did,
+                                    CONF_EXPOSE_ALL: self._expose_all,
+                                    CONF_SCAN_INTERVAL: self._scan_interval,
+                                },
+                            )
+                        )
+
+                    await self.async_set_unique_id(first_id)
+                    self._abort_if_unique_id_configured()
 
                     data = {
                         CONF_TOKEN: self._token,
-                        CONF_DEVICE_IDS: device_ids,
+                        CONF_DEVICE_ID: first_id,
+                        CONF_DEVICE_NAME: first_name or first_id,
                         CONF_EXPOSE_ALL: self._expose_all,
                         CONF_SCAN_INTERVAL: self._scan_interval,
                     }
-                    return self.async_create_entry(title="Samsung SmartThings (All Samsung devices)", data=data)
+                    return self.async_create_entry(title=data[CONF_DEVICE_NAME], data=data)
 
                 return await self.async_step_device()
             except ClientResponseError as exc:
@@ -121,7 +152,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             did = d.get("deviceId")
             if not isinstance(did, str) or not did:
                 continue
-            label = d.get("label") or d.get("name") or did
+            label = _device_name(d)
             dtype = d.get("deviceTypeName") or ""
             opt = f"{label} [{dtype}] ({did[:8]})"
             options.append({"label": opt, "value": did})
@@ -164,4 +195,29 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_import(self, user_input: dict[str, Any]):
+        """Create a config entry from an import request (used by add-all and migrations)."""
+        token = str(user_input.get(CONF_TOKEN, "") or "").strip()
+        device_id = str(user_input.get(CONF_DEVICE_ID, "") or "").strip()
+        device_name = str(user_input.get(CONF_DEVICE_NAME, "") or "").strip() or device_id
+        expose_all = bool(user_input.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
+        scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+
+        if not token or not device_id:
+            return self.async_abort(reason="invalid_import")
+
+        await self.async_set_unique_id(device_id)
+        self._abort_if_unique_id_configured()
+
+        return self.async_create_entry(
+            title=device_name,
+            data={
+                CONF_TOKEN: token,
+                CONF_DEVICE_ID: device_id,
+                CONF_DEVICE_NAME: device_name,
+                CONF_EXPOSE_ALL: expose_all,
+                CONF_SCAN_INTERVAL: scan_interval,
+            },
         )

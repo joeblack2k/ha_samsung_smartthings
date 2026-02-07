@@ -29,9 +29,24 @@ class SmartThingsApi:
             "Accept": "application/json",
         }
         async with session.request(method, url, headers=headers, json=json_body) as resp:
-            resp.raise_for_status()
-            # SmartThings sometimes returns empty body for 202.
+            # Read the body first so we can include it in any raised error.
             text = await resp.text()
+
+            if resp.status >= 400:
+                # Avoid logging secrets (token is only in headers, not the body).
+                snippet = (text or "").strip()
+                if len(snippet) > 800:
+                    snippet = snippet[:800] + "..."
+                msg = f"SmartThings API error {resp.status} for {method} {url}: {snippet}"
+                raise ClientResponseError(
+                    resp.request_info,
+                    resp.history,
+                    status=resp.status,
+                    message=msg,
+                    headers=resp.headers,
+                )
+
+            # SmartThings sometimes returns empty body for 202.
             if not text:
                 return None
             try:

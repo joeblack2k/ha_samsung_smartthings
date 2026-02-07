@@ -5,7 +5,19 @@ from typing import Any
 
 from aiohttp import ClientResponseError
 from homeassistant.components.remote import RemoteEntity
-from homeassistant.components.remote.const import RemoteEntityFeature
+
+# Home Assistant has moved/renamed feature flags for `remote` across versions.
+# Try known import locations and fall back to the numeric bit for SEND_COMMAND.
+try:
+    from homeassistant.components.remote import RemoteEntityFeature  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - depends on HA version
+    try:
+        from homeassistant.components.remote.const import RemoteEntityFeature  # type: ignore
+    except Exception:  # pragma: no cover - depends on HA version
+        from enum import IntFlag
+
+        class RemoteEntityFeature(IntFlag):  # type: ignore[no-redef]
+            SEND_COMMAND = 1
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -71,4 +83,3 @@ class SamsungSmartThingsRemote(SamsungSmartThingsEntity, RemoteEntity):
                 _LOGGER.exception("Remote command failed: device=%s key=%s", self.device.device_id, key)
 
         await self.coordinator.async_request_refresh()
-

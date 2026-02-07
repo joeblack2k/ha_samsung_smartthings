@@ -24,9 +24,16 @@ class SmartThingsCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         try:
-            dev = await self.device.api.get_device(self.device.device_id)
             status = await self.device.api.get_status(self.device.device_id)
-            self.device.update_runtime(dev, status)
-            return {"device": dev, "status": status}
+            self.device.update_runtime_status(status)
+
+            # Poll execute-based features for soundbars.
+            if self.device.is_soundbar and self.device._sb_execute_supported is not False:
+                try:
+                    await self.device.update_execute_features()
+                except Exception:
+                    _LOGGER.debug("Execute features poll failed for %s", self.device.device_id)
+
+            return {"status": status}
         except Exception as err:
             raise UpdateFailed(str(err)) from err

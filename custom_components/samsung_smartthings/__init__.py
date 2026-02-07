@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DEVICE_NAME,
     CONF_DEVICE_IDS,
     CONF_EXPOSE_ALL,
     CONF_SCAN_INTERVAL,
@@ -58,7 +61,17 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         if not items:
             raise ValueError(f"Config entry has no devices: {ent.config_entry_id}")
 
-        # If the user targeted an entity_id, we might not know which device. Prefer first.
+        # Try to match entity's HA device to a SmartThings device_id.
+        if ent.device_id:
+            from homeassistant.helpers import device_registry as dr
+            dev_reg = dr.async_get(hass)
+            ha_dev = dev_reg.async_get(ent.device_id)
+            if ha_dev:
+                for item in items:
+                    st_did = item["device"].device_id
+                    if (DOMAIN, st_did) in ha_dev.identifiers:
+                        return item["device"], item["coordinator"]
+        # Fallback to first device in this config entry.
         return items[0]["device"], items[0]["coordinator"]
 
     async def _raw_command(call) -> None:
@@ -139,18 +152,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     api = SmartThingsApi(hass, entry.data[CONF_TOKEN])
 
-    device_ids: list[str] = []
+    # Migration: older versions stored multiple devices under one config entry.
+    # We now create one config entry per device. If we detect the legacy format,
+    # split it into import flows and remove the legacy entry.
+    legacy_ids: list[str] = []
     if isinstance(entry.data.get(CONF_DEVICE_IDS), list):
-        device_ids = [d for d in entry.data[CONF_DEVICE_IDS] if isinstance(d, str) and d]
-    else:
-        did = entry.data.get(CONF_DEVICE_ID)
-        if isinstance(did, str) and did:
-            device_ids = [did]
+        legacy_ids = [d for d in entry.data[CONF_DEVICE_IDS] if isinstance(d, str) and d]
+    if legacy_ids:
+        _LOGGER.warning(
+            "[%s] Legacy multi-device config entry detected (%d devices). "
+            "Splitting into per-device entries and removing the legacy entry: %s",
+            DOMAIN,
+            len(legacy_ids),
+            entry.title,
+        )
+        token = entry.data.get(CONF_TOKEN)
+        expose_all = bool(entry.data.get(CONF_EXPOSE_ALL, True))
+        scan_interval = int(entry.data.get(CONF_SCAN_INTERVAL, 15))
+        for did in legacy_ids:
+            hass.async_create_task(
+                hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": config_entries.SOURCE_IMPORT},
+                    data={
+                        CONF_TOKEN: token,
+                        CONF_DEVICE_ID: did,
+                        # Name can be resolved later; keep stable now.
+                        CONF_DEVICE_NAME: did,
+                        CONF_EXPOSE_ALL: expose_all,
+                        CONF_SCAN_INTERVAL: scan_interval,
+                    },
+                )
+            )
+
+        hass.async_create_task(hass.config_entries.async_remove(entry.entry_id))
+        return True
+
+    did = entry.data.get(CONF_DEVICE_ID)
+    if not isinstance(did, str) or not did:
+        _LOGGER.error("[%s] Missing %s in config entry %s", DOMAIN, CONF_DEVICE_ID, entry.entry_id)
+        return False
+    device_ids = [did]
 
     items: list[dict] = []
     for device_id in device_ids:
         dev = SmartThingsDevice(api, device_id, expose_all=entry.data.get(CONF_EXPOSE_ALL, True))
-        await dev.async_init()
+        try:
+            await dev.async_init()
+        except Exception as err:
+            raise ConfigEntryNotReady(
+                f"Device {device_id} not reachable during setup"
+            ) from err
         coordinator = SmartThingsCoordinator(hass, dev, scan_interval=entry.data.get(CONF_SCAN_INTERVAL, 15))
         await coordinator.async_config_entry_first_refresh()
         items.append({"device": dev, "coordinator": coordinator})

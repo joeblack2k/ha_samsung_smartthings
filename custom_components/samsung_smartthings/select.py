@@ -7,7 +7,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, RearSpeakerMode
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
 
@@ -44,6 +44,16 @@ async def async_setup_entry(
         # TV input source (Samsung map)
         if dev.has_capability("samsungvd.mediaInputSource"):
             entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
+
+        # Soundbar audio input source (cycle-based)
+        if dev.has_capability("samsungvd.audioInputSource"):
+            entities.append(SoundbarInputSourceSelect(coordinator))
+
+        # Soundbar execute-based selects (only if execute is available)
+        if dev.is_soundbar and dev.has_capability("execute"):
+            entities.append(SoundbarSoundModeSelect(coordinator))
+            entities.append(SoundbarEQPresetSelect(coordinator))
+            entities.append(SoundbarRearSpeakerModeSelect(coordinator))
 
     async_add_entities(entities)
 
@@ -126,10 +136,13 @@ def _samsung_input_source_desc() -> SmartThingsSelect:
         cur_id = d.get_attr("samsungvd.mediaInputSource", "inputSource")
         if not isinstance(cur_id, str):
             return None
-        for i, n in _map(d):
+        pairs = _map(d)
+        names = [n for _i, n in pairs]
+        dup = {n for n in names if names.count(n) > 1}
+        for i, n in pairs:
             if i == cur_id:
-                return n
-        return cur_id
+                return f"{n} ({i})" if n in dup else n
+        return None
 
     def to_args(option: str, d):
         # option is either name or "name (id)"
@@ -168,9 +181,138 @@ class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
     @property
     def current_option(self) -> str | None:
         v = self.desc.current_fn(self.device)
-        return v if isinstance(v, str) else None
+        if not isinstance(v, str):
+            return None
+        # HA logs warnings if current_option is not in options.
+        if v not in self.options:
+            return None
+        return v
 
     async def async_select_option(self, option: str) -> None:
         args = self.desc.to_args_fn(option, self.device)
         await self.device.send_command(self.desc.capability, self.desc.command, arguments=args)
+        await self.coordinator.async_request_refresh()
+
+
+# ---- Soundbar-specific select entities ----
+
+
+class SoundbarInputSourceSelect(SamsungSmartThingsEntity, SelectEntity):
+    """Input source for soundbars using samsungvd.audioInputSource (cycle-based)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_select_audio_input_source"
+        self._attr_name = "Audio Input Source"
+
+    @property
+    def options(self) -> list[str]:
+        sources = self.device.get_attr("samsungvd.audioInputSource", "supportedInputSources")
+        if isinstance(sources, list):
+            return [s for s in sources if isinstance(s, str)]
+        return []
+
+    @property
+    def current_option(self) -> str | None:
+        v = self.device.get_attr("samsungvd.audioInputSource", "inputSource")
+        if isinstance(v, str) and v in self.options:
+            return v
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        await self.device.select_audio_input_source(option)
+        await self.coordinator.async_request_refresh()
+
+
+class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
+    """Execute-based sound mode for soundbars."""
+
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_select_sb_soundmode"
+        self._attr_name = "Soundbar Sound Mode"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.device._sb_execute_supported is True
+
+    @property
+    def options(self) -> list[str]:
+        return [s for s in self.device._sb_soundmodes if isinstance(s, str)]
+
+    @property
+    def current_option(self) -> str | None:
+        v = self.device._sb_soundmode
+        if isinstance(v, str) and v in self.options:
+            return v
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        await self.device.set_soundbar_soundmode(option)
+        await self.coordinator.async_request_refresh()
+
+
+class SoundbarEQPresetSelect(SamsungSmartThingsEntity, SelectEntity):
+    """Execute-based EQ preset for soundbars."""
+
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_select_sb_eq_preset"
+        self._attr_name = "Equalizer Preset"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.device._sb_execute_supported is True
+
+    @property
+    def options(self) -> list[str]:
+        return [s for s in self.device._sb_eq_presets if isinstance(s, str)]
+
+    @property
+    def current_option(self) -> str | None:
+        v = self.device._sb_eq_preset
+        if isinstance(v, str) and v in self.options:
+            return v
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        await self.device.set_eq_preset(option)
+        await self.coordinator.async_request_refresh()
+
+
+class SoundbarRearSpeakerModeSelect(SamsungSmartThingsEntity, SelectEntity):
+    """Rear speaker mode (Front/Rear) for soundbars."""
+
+    _attr_has_entity_name = True
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_select_sb_rear_speaker_mode"
+        self._attr_name = "Rear Speaker Mode"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.device._sb_execute_supported is True
+
+    @property
+    def options(self) -> list[str]:
+        return [m.value for m in RearSpeakerMode]
+
+    @property
+    def current_option(self) -> str | None:
+        # Not polled via execute — no read-back. Return None.
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        mode = RearSpeakerMode(option)
+        await self.device.set_rear_speaker_mode(mode)
         await self.coordinator.async_request_refresh()
