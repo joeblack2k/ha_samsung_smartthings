@@ -24,9 +24,12 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 
 1. Home Assistant: Settings -> Devices & services -> Add integration
 2. Search for `Samsung SmartThings (Cloud)`
-3. Paste a SmartThings Personal Access Token
-4. The integration adds a single “hub” entry for that token and auto-discovers all Samsung devices on the account
-5. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
+3. Choose the setup type:
+   - `SmartThings Cloud (token)` (default)
+   - `Soundbar Local (LAN)` (optional, for supported 2024 soundbars)
+4. Paste a SmartThings Personal Access Token (Cloud) OR enter the soundbar IP (Local)
+5. Cloud mode: the integration adds a single “hub” entry for that token and auto-discovers all Samsung devices on the account
+6. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
 
 ## Services
 
@@ -63,6 +66,13 @@ Workarounds:
 - Use the physical remote (most reliable)
 - Use HDMI-CEC / TV integration to change soundbar source
 - Use an IR blaster if you want deterministic source switching from Home Assistant
+
+### Soundbar Local (LAN) for 2024 Wi-Fi soundbars (input switching)
+For supported 2024-line Wi-Fi soundbars, `Soundbar Local (LAN)` uses the soundbar's local JSON-RPC API (HTTPS port `1516`, self-signed cert) and supports reliable input switching (HDMI1/eARC/etc).
+
+Requirements:
+- Soundbar connected via Wi-Fi and added to the SmartThings app
+- SmartThings app: enable **IP control** for the soundbar
 
 ### Frame TVs / Art Mode
 Frame TV Art/Ambient mode is highly model/account dependent in SmartThings cloud. This integration provides best-effort controls, but if you need reliable Art Mode and power state, a local TV integration is often a better fit.
