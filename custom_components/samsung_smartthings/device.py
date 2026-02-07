@@ -154,6 +154,26 @@ class SmartThingsDevice:
                     out.append((comp_id, cap_id, attr, node.get("value"), node.get("unit")))
         return out
 
+    def get_capability_def(self, cap_id: str) -> dict[str, Any] | None:
+        """Return the first matching capability definition for this device."""
+        rt = self.runtime
+        if not rt:
+            return None
+        for _k, capdef in (rt.capability_defs or {}).items():
+            if isinstance(capdef, dict) and capdef.get("id") == cap_id:
+                return capdef
+        return None
+
+    def get_command_def(self, cap_id: str, command: str) -> dict[str, Any] | None:
+        capdef = self.get_capability_def(cap_id)
+        if not isinstance(capdef, dict):
+            return None
+        cmds = capdef.get("commands")
+        if not isinstance(cmds, dict):
+            return None
+        cmd = cmds.get(command)
+        return cmd if isinstance(cmd, dict) else None
+
     # -------- command helpers --------
 
     async def send_command(
@@ -339,4 +359,3 @@ class SmartThingsDevice:
             await asyncio.sleep(0.6)
             status = await self.api.get_status(self.device_id)
             self.update_runtime_status(status)
-

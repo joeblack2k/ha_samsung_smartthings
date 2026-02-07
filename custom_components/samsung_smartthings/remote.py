@@ -19,65 +19,33 @@ except Exception:  # pragma: no cover - depends on HA version
         class RemoteEntityFeature(IntFlag):  # type: ignore[no-redef]
             SEND_COMMAND = 1
 
-def _get_send_feature() -> object:
-    """Return the 'send command' feature constant across HA versions."""
+def _get_send_mask() -> int:
+    """Return the bitmask for the 'send command' feature across HA versions."""
     for name in ("SEND_COMMAND", "COMMAND", "SEND"):
         f = getattr(RemoteEntityFeature, name, None)
-        if f is not None:
-            return f
+        if f is None:
+            continue
+        try:
+            return int(f)
+        except Exception:
+            # Some Enums may not be int-like; fall through to legacy bit.
+            pass
     # Last resort: legacy bit value.
     return 1
 
 
-_SEND_FEATURE = _get_send_feature()
-
-
-class _CompatSupportedFeatures:
-    """Adapter that works for HA versions that treat supported_features as int or iterable."""
-
-    def __init__(self, features: list[object]) -> None:
-        self._features = list(features)
-        self._set = set(features)
-        mask = 0
-        for f in features:
-            try:
-                mask |= int(f)  # IntFlag and some Enums are int-convertible
-            except Exception:
-                pass
-        self._mask = mask
-
-    def __iter__(self):
-        return iter(self._features)
+class _FeatureMask(int):
+    """Int mask that also supports `feature in mask` membership checks."""
 
     def __contains__(self, item: object) -> bool:
-        return item in self._set
-
-    def __int__(self) -> int:
-        return int(self._mask)
-
-    def __index__(self) -> int:
-        return int(self._mask)
-
-    def __bool__(self) -> bool:
-        return bool(self._mask) or bool(self._features)
-
-    def __and__(self, other: object) -> int:
         try:
-            return int(self) & int(other)  # type: ignore[arg-type]
+            iv = int(item)  # RemoteEntityFeature is typically IntFlag
         except Exception:
-            return 0
+            return False
+        return (int(self) & iv) == iv
 
-    def __rand__(self, other: object) -> int:
-        return self.__and__(other)
 
-    def __or__(self, other: object) -> int:
-        try:
-            return int(self) | int(other)  # type: ignore[arg-type]
-        except Exception:
-            return int(self)
-
-    def __ror__(self, other: object) -> int:
-        return self.__or__(other)
+_SEND_MASK = _get_send_mask()
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -108,7 +76,9 @@ class SamsungSmartThingsRemote(SamsungSmartThingsEntity, RemoteEntity):
 
     @property
     def supported_features(self):  # type: ignore[override]
-        return _CompatSupportedFeatures([_SEND_FEATURE])
+        # Return an int-like mask for old HA versions, but also support new versions
+        # that do membership checks (`FEATURE in supported_features`).
+        return _FeatureMask(_SEND_MASK)
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)

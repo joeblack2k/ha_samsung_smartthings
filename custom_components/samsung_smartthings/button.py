@@ -5,6 +5,7 @@ from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -37,7 +38,7 @@ async def async_setup_entry(
         # Remote keys are exposed as a proper `remote` entity (not buttons).
 
         # Ambient / Frame mode trigger
-        if dev.has_capability("samsungvd.ambient"):
+        if dev.has_capability("samsungvd.ambient") and dev.get_command_def("samsungvd.ambient", "setAmbientOn"):
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
@@ -51,7 +52,7 @@ async def async_setup_entry(
                     unique_suffix="ambient_on",
                 )
             )
-        if dev.has_capability("samsungvd.ambient18"):
+        if dev.has_capability("samsungvd.ambient18") and dev.get_command_def("samsungvd.ambient18", "setAmbientOn"):
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
@@ -67,7 +68,9 @@ async def async_setup_entry(
             )
 
         # Soundbar: next input source
-        if dev.has_capability("samsungvd.audioInputSource"):
+        if dev.has_capability("samsungvd.audioInputSource") and dev.get_command_def(
+            "samsungvd.audioInputSource", "setNextInputSource"
+        ):
             entities.append(
                 SamsungSmartThingsCommandButton(
                     coordinator,
@@ -103,11 +106,17 @@ async def async_setup_entry(
                 "samsungvd.ambient18",
                 "samsungvd.audioInputSource",
             }
+            skip_prefixes = (
+                "custom.recording",
+                "samsungim.",
+            )
             for key, capdef in rt.capability_defs.items():
                 if not isinstance(capdef, dict):
                     continue
                 cap_id = capdef.get("id")
                 if cap_id in skip_caps:
+                    continue
+                if isinstance(cap_id, str) and cap_id.startswith(skip_prefixes):
                     continue
                 cmds = capdef.get("commands")
                 if not isinstance(cap_id, str) or not isinstance(cmds, dict):
@@ -158,6 +167,9 @@ class SamsungSmartThingsCommandButton(SamsungSmartThingsEntity, ButtonEntity):
         self._attr_unique_id = f"{self.device.device_id}_{unique_suffix}"
         self._attr_name = desc.name
         self._attr_entity_registry_enabled_default = bool(desc.enabled_by_default)
+        if not desc.enabled_by_default:
+            # Generic / advanced buttons should not clutter the UI.
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:
         try:
