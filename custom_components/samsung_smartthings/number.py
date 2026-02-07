@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SpeakerIdentifier
@@ -40,6 +41,7 @@ async def async_setup_entry(
 class SamsungSmartThingsVolumeNumber(SamsungSmartThingsEntity, NumberEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_min_value = 0
     _attr_native_max_value = 100
     _attr_native_step = 1
@@ -66,6 +68,7 @@ class SamsungSmartThingsVolumeNumber(SamsungSmartThingsEntity, NumberEntity):
 class SamsungSmartThingsSoundFromModeNumber(SamsungSmartThingsEntity, NumberEntity):
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_min_value = 0
     _attr_native_max_value = 10
     _attr_native_step = 1
@@ -97,6 +100,7 @@ class SoundbarWooferLevelNumber(SamsungSmartThingsEntity, NumberEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_min_value = -12
     _attr_native_max_value = 6
     _attr_native_step = 1
@@ -139,6 +143,7 @@ class SoundbarSpeakerLevelNumber(SamsungSmartThingsEntity, NumberEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_min_value = -12
     _attr_native_max_value = 6
     _attr_native_step = 1

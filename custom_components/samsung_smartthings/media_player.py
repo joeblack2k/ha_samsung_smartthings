@@ -35,7 +35,15 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         super().__init__(coordinator)
         self._attr_unique_id = f"{self.device.device_id}_media_player"
         self._attr_name = "Media"
-        self._attr_device_class = MediaPlayerDeviceClass.SPEAKER
+        # TVs and soundbars are both exposed as media_player; pick the right device class.
+        if (
+            self.device.has_capability("tvChannel")
+            or self.device.has_capability("samsungvd.mediaInputSource")
+            or self.device.has_capability("samsungvd.remoteControl")
+        ):
+            self._attr_device_class = MediaPlayerDeviceClass.TV
+        else:
+            self._attr_device_class = MediaPlayerDeviceClass.SPEAKER
 
     @property
     def supported_features(self) -> int:

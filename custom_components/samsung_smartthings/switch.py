@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from aiohttp import ClientResponseError
 
 from .const import DOMAIN
 from .coordinator import SmartThingsCoordinator
@@ -51,12 +54,36 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
         return None
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.device.send_command("switch", "on", arguments=[])
-        await self.coordinator.async_request_refresh()
+        try:
+            await self.device.send_command("switch", "on", arguments=[])
+        except ClientResponseError:
+            # Some TVs cannot be powered on via the SmartThings cloud switch command.
+            # Best-effort fallback: send a POWER key via remoteControl (toggle).
+            if self.device.has_capability("samsungvd.remoteControl"):
+                await self.device.send_command(
+                    "samsungvd.remoteControl",
+                    "send",
+                    arguments=["POWER", "PRESS_AND_RELEASED"],
+                )
+            else:
+                raise
+        finally:
+            await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.device.send_command("switch", "off", arguments=[])
-        await self.coordinator.async_request_refresh()
+        try:
+            await self.device.send_command("switch", "off", arguments=[])
+        except ClientResponseError:
+            if self.device.has_capability("samsungvd.remoteControl"):
+                await self.device.send_command(
+                    "samsungvd.remoteControl",
+                    "send",
+                    arguments=["POWER", "PRESS_AND_RELEASED"],
+                )
+            else:
+                raise
+        finally:
+            await self.coordinator.async_request_refresh()
 
 
 # ---- Soundbar execute-based switches ----
@@ -67,6 +94,7 @@ class _SoundbarExecuteSwitch(SamsungSmartThingsEntity, SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     _state_attr: str  # override in subclass
     _set_method: str  # method name on device

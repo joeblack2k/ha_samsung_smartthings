@@ -5,6 +5,7 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, RearSpeakerMode
@@ -231,6 +232,7 @@ class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
@@ -262,6 +264,7 @@ class SoundbarEQPresetSelect(SamsungSmartThingsEntity, SelectEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
@@ -293,6 +296,7 @@ class SoundbarRearSpeakerModeSelect(SamsungSmartThingsEntity, SelectEntity):
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
