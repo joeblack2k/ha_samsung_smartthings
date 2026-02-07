@@ -5,6 +5,7 @@ from typing import Any
 
 from aiohttp import ClientResponseError
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import API_BASE
 
@@ -21,8 +22,8 @@ class SmartThingsApi:
         return self._token
 
     async def _request(self, method: str, path: str, *, json_body: dict[str, Any] | None = None) -> Any:
-        session = self._hass.helpers.aiohttp_client.async_get_clientsession(self._hass)
-        url = f"{API_BASE}{path}"
+        session = async_get_clientsession(self._hass)
+        url = path if path.startswith("http://") or path.startswith("https://") else f"{API_BASE}{path}"
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Accept": "application/json",
@@ -90,4 +91,3 @@ class SmartThingsApi:
             f"/devices/{device_id}/commands",
             json_body={"commands": commands},
         )
-
