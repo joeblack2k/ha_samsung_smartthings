@@ -3,36 +3,55 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from datetime import timedelta
 
 from aiohttp import ClientResponseError
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_IDS,
     CONF_DISCOVERY_INTERVAL,
+    CONF_ENTRY_TYPE,
     CONF_EXPOSE_ALL,
+    CONF_HOST as CONF_HOST_LOCAL,
     CONF_INCLUDE_NON_SAMSUNG,
     CONF_MANAGE_DIAGNOSTICS,
     CONF_SCAN_INTERVAL,
     CONF_TOKEN,
+    CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_EXPOSE_ALL,
     DEFAULT_INCLUDE_NON_SAMSUNG,
+    DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL,
     DEFAULT_MANAGE_DIAGNOSTICS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    ENTRY_TYPE_SOUNDBAR_LOCAL,
     PLATFORMS,
 )
 from .coordinator import SmartThingsCoordinator
 from .device import SmartThingsDevice
 from .smartthings_api import SmartThingsApi
+from .soundbar_local_api import AsyncSoundbarLocal, SoundbarLocalError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries to the latest version."""
+    # v3 introduced a multi-path config flow (cloud token + local soundbar).
+    # Existing entries are cloud-token based and can be migrated by bumping version.
+    if entry.version < 3:
+        hass.config_entries.async_update_entry(entry, version=3)
+    return True
 
 
 def _token_key(token: str) -> str:
@@ -250,6 +269,42 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # ---- Soundbar Local (LAN) entry type ----
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or entry.data.get(CONF_HOST_LOCAL):
+        host = entry.data.get(CONF_HOST_LOCAL) or entry.data.get(CONF_HOST)
+        if not isinstance(host, str) or not host:
+            raise ConfigEntryNotReady("Missing host for local soundbar entry")
+
+        verify_ssl = bool(entry.data.get(CONF_VERIFY_SSL, False))
+        session = aiohttp_client.async_create_clientsession(hass, verify_ssl=verify_ssl)
+        soundbar = AsyncSoundbarLocal(host=host, session=session, verify_ssl=verify_ssl)
+
+        async def _update() -> dict:
+            try:
+                return await soundbar.status()
+            except SoundbarLocalError as err:
+                raise UpdateFailed(err) from err
+
+        coordinator = DataUpdateCoordinator(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_soundbar_local_{host}",
+            update_method=_update,
+            update_interval=timedelta(seconds=DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL),
+        )
+        await coordinator.async_config_entry_first_refresh()
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = {
+            "type": ENTRY_TYPE_SOUNDBAR_LOCAL,
+            "host": host,
+            "soundbar": soundbar,
+            "coordinator": coordinator,
+        }
+
+        await hass.config_entries.async_forward_entry_setups(entry, ["media_player"])
+        return True
+
     token = entry.data.get(CONF_TOKEN)
     if not isinstance(token, str) or not token:
         _LOGGER.error("[%s] Missing %s in config entry %s", DOMAIN, CONF_TOKEN, entry.entry_id)
@@ -372,6 +427,14 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or entry.data.get(CONF_HOST_LOCAL):
+        unload_ok = await hass.config_entries.async_unload_platforms(entry, ["media_player"])
+        if unload_ok:
+            hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+            if not hass.data.get(DOMAIN):
+                hass.data.pop(DOMAIN, None)
+        return unload_ok
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if not unload_ok:
         return False

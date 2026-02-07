@@ -1,6 +1,14 @@
 DOMAIN = "samsung_smartthings"
 
 CONF_TOKEN = "token"
+CONF_ENTRY_TYPE = "entry_type"
+ENTRY_TYPE_CLOUD = "cloud"
+ENTRY_TYPE_SOUNDBAR_LOCAL = "soundbar_local"
+
+# Local soundbar (LAN) keys
+CONF_HOST = "host"
+CONF_VERIFY_SSL = "verify_ssl"
+
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_IDS = "device_ids"
 CONF_DEVICE_NAME = "device_name"
@@ -22,6 +30,9 @@ DEFAULT_INCLUDE_NON_SAMSUNG = False
 # the entry if new devices appear.
 DEFAULT_DISCOVERY_INTERVAL = 3600  # seconds
 DEFAULT_MANAGE_DIAGNOSTICS = True
+
+# Local soundbar poll interval: LAN is fast, but don't spam.
+DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL = 10  # seconds
 
 # Platforms we create dynamically based on capabilities.
 PLATFORMS: list[str] = [

@@ -6,21 +6,27 @@ from typing import Any
 
 from aiohttp import ClientResponseError
 from homeassistant import config_entries
+from homeassistant.const import CONF_HOST
 import voluptuous as vol
 
 from .const import (
     CONF_DISCOVERY_INTERVAL,
+    CONF_ENTRY_TYPE,
     CONF_EXPOSE_ALL,
+    CONF_HOST as CONF_HOST_LOCAL,
     CONF_INCLUDE_NON_SAMSUNG,
     CONF_MANAGE_DIAGNOSTICS,
     CONF_SCAN_INTERVAL,
     CONF_TOKEN,
+    CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_EXPOSE_ALL,
     DEFAULT_INCLUDE_NON_SAMSUNG,
     DEFAULT_MANAGE_DIAGNOSTICS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    ENTRY_TYPE_CLOUD,
+    ENTRY_TYPE_SOUNDBAR_LOCAL,
 )
 from .smartthings_api import SmartThingsApi
 
@@ -41,9 +47,31 @@ async def _validate_token(hass, token: str) -> dict[str, Any]:
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Hub-style config flow: one entry per SmartThings account/token."""
 
-    VERSION = 2
+    VERSION = 3
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        """Pick setup type (Cloud or Local soundbar)."""
+        if user_input is not None:
+            t = user_input.get(CONF_ENTRY_TYPE)
+            if t == ENTRY_TYPE_SOUNDBAR_LOCAL:
+                return await self.async_step_soundbar_local()
+            return await self.async_step_cloud()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ENTRY_TYPE, default=ENTRY_TYPE_CLOUD): vol.In(
+                        {
+                            ENTRY_TYPE_CLOUD: "SmartThings Cloud (token)",
+                            ENTRY_TYPE_SOUNDBAR_LOCAL: "Soundbar Local (LAN)",
+                        }
+                    )
+                }
+            ),
+        )
+
+    async def async_step_cloud(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -53,7 +81,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     await _validate_token(self.hass, token)
-                    # Prevent duplicate entries even if older installs used a different unique_id.
                     for e in self._async_current_entries():
                         if e.data.get(CONF_TOKEN) == token:
                             return self.async_abort(reason="already_configured")
@@ -61,8 +88,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await self.async_set_unique_id(_token_key(token))
                     self._abort_if_unique_id_configured()
 
-                    # We seed defaults in entry.data for maximum HA compatibility.
-                    # async_setup_entry will migrate these into entry.options and keep data token-only.
                     return self.async_create_entry(
                         title="Samsung SmartThings (Cloud)",
                         data={
@@ -72,6 +97,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_DISCOVERY_INTERVAL: DEFAULT_DISCOVERY_INTERVAL,
                             CONF_INCLUDE_NON_SAMSUNG: DEFAULT_INCLUDE_NON_SAMSUNG,
                             CONF_MANAGE_DIAGNOSTICS: DEFAULT_MANAGE_DIAGNOSTICS,
+                            CONF_ENTRY_TYPE: ENTRY_TYPE_CLOUD,
                         },
                     )
                 except ClientResponseError as exc:
@@ -84,8 +110,37 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
 
         return self.async_show_form(
-            step_id="user",
+            step_id="cloud",
             data_schema=vol.Schema({vol.Required(CONF_TOKEN): str}),
+            errors=errors,
+        )
+
+    async def async_step_soundbar_local(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = str(user_input.get(CONF_HOST, "") or "").strip()
+            if not host:
+                errors["base"] = "cannot_connect"
+            else:
+                await self.async_set_unique_id(f"soundbar_local_{host}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"Soundbar {host}",
+                    data={
+                        CONF_ENTRY_TYPE: ENTRY_TYPE_SOUNDBAR_LOCAL,
+                        CONF_HOST_LOCAL: host,
+                        CONF_VERIFY_SSL: bool(user_input.get(CONF_VERIFY_SSL, False)),
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="soundbar_local",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST): str,
+                    vol.Optional(CONF_VERIFY_SSL, default=False): bool,
+                }
+            ),
             errors=errors,
         )
 
