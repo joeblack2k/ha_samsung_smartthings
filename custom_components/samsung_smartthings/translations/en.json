@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Samsung SmartThings (Cloud)",
+        "description": "Enter your SmartThings Personal Access Token. This integration talks to the SmartThings cloud API.",
+        "data": {
+          "token": "Personal Access Token",
+          "expose_all": "Expose all attributes and no-arg commands (advanced, many entities)"
+        }
+      },
+      "device": {
+        "title": "Select device",
+        "description": "Pick the device to add as a Home Assistant device."
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to SmartThings.",
+      "invalid_auth": "Invalid token.",
+      "invalid_device": "Invalid device selection."
+    }
+  }
+}
+

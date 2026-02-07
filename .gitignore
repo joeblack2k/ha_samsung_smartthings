@@ -1,0 +1,16 @@
+# macOS / network share metadata
+.DS_Store
+._*
+__MACOSX/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editor
+.vscode/
+.idea/
+
+# Local outputs
+*.log
+*.tmp

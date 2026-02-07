@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.select import SelectEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import DOMAIN
+from .coordinator import SmartThingsCoordinator
+from .entity_base import SamsungSmartThingsEntity
+
+
+@dataclass(frozen=True, kw_only=True)
+class SmartThingsSelect:
+    capability: str
+    attribute: str
+    command: str
+    arg_index: int
+    name: str
+    options_fn: Any
+    current_fn: Any
+    to_args_fn: Any
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    domain = hass.data[DOMAIN][entry.entry_id]
+    coordinator: SmartThingsCoordinator = domain["coordinator"]
+    dev = coordinator.device
+
+    entities: list[SelectEntity] = []
+
+    # Picture mode
+    if dev.has_capability("custom.picturemode"):
+        entities.append(SamsungSmartThingsSelect(coordinator, _picture_mode_desc()))
+    # Sound mode
+    if dev.has_capability("custom.soundmode"):
+        entities.append(SamsungSmartThingsSelect(coordinator, _sound_mode_desc()))
+    # TV input source (Samsung map)
+    if dev.has_capability("samsungvd.mediaInputSource"):
+        entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
+
+    async_add_entities(entities)
+
+
+def _picture_mode_desc() -> SmartThingsSelect:
+    return SmartThingsSelect(
+        capability="custom.picturemode",
+        attribute="pictureMode",
+        command="setPictureMode",
+        arg_index=0,
+        name="Picture Mode",
+        options_fn=lambda d: d.get_attr("custom.picturemode", "supportedPictureModes") or [],
+        current_fn=lambda d: d.get_attr("custom.picturemode", "pictureMode"),
+        to_args_fn=lambda option, d: [option],
+    )
+
+
+def _sound_mode_desc() -> SmartThingsSelect:
+    return SmartThingsSelect(
+        capability="custom.soundmode",
+        attribute="soundMode",
+        command="setSoundMode",
+        arg_index=0,
+        name="Sound Mode",
+        options_fn=lambda d: d.get_attr("custom.soundmode", "supportedSoundModes") or [],
+        current_fn=lambda d: d.get_attr("custom.soundmode", "soundMode"),
+        to_args_fn=lambda option, d: [option],
+    )
+
+
+def _samsung_input_source_desc() -> SmartThingsSelect:
+    def opts(d):
+        m = d.get_attr("samsungvd.mediaInputSource", "supportedInputSourcesMap") or []
+        out = []
+        if isinstance(m, list):
+            for it in m:
+                if isinstance(it, dict) and isinstance(it.get("id"), str):
+                    out.append(it["id"])
+        return out
+
+    def cur(d):
+        return d.get_attr("samsungvd.mediaInputSource", "inputSource")
+
+    return SmartThingsSelect(
+        capability="samsungvd.mediaInputSource",
+        attribute="inputSource",
+        command="setInputSource",
+        arg_index=0,
+        name="Input Source",
+        options_fn=opts,
+        current_fn=cur,
+        to_args_fn=lambda option, d: [option],
+    )
+
+
+class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: SmartThingsCoordinator, desc: SmartThingsSelect) -> None:
+        super().__init__(coordinator)
+        self.desc = desc
+        self._attr_unique_id = f"{self.device.device_id}_select_{desc.capability}_{desc.attribute}"
+        self._attr_name = desc.name
+
+    @property
+    def options(self) -> list[str]:
+        opts = self.desc.options_fn(self.device)
+        return [x for x in opts if isinstance(x, str)]
+
+    @property
+    def current_option(self) -> str | None:
+        v = self.desc.current_fn(self.device)
+        return v if isinstance(v, str) else None
+
+    async def async_select_option(self, option: str) -> None:
+        args = self.desc.to_args_fn(option, self.device)
+        await self.device.send_command(self.desc.capability, self.desc.command, arguments=args)
+        await self.coordinator.async_request_refresh()
+

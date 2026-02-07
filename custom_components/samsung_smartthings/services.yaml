@@ -1,0 +1,31 @@
+raw_command:
+  name: Raw SmartThings command
+  description: Send a raw capability command to the device. This is the universal escape hatch for new/unknown capabilities.
+  fields:
+    component:
+      name: Component
+      description: SmartThings component (usually `main`).
+      example: main
+      required: true
+      selector:
+        text: {}
+    capability:
+      name: Capability
+      example: samsungvd.remoteControl
+      required: true
+      selector:
+        text: {}
+    command:
+      name: Command
+      example: send
+      required: true
+      selector:
+        text: {}
+    args_json:
+      name: Args JSON
+      description: JSON array (preferred) or single JSON value. Leave empty for no args.
+      example: '["HOME","PRESS_AND_RELEASED"]'
+      required: false
+      selector:
+        text: {}
+
