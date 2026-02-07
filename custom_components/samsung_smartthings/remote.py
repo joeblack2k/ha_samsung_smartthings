@@ -19,9 +19,65 @@ except Exception:  # pragma: no cover - depends on HA version
         class RemoteEntityFeature(IntFlag):  # type: ignore[no-redef]
             SEND_COMMAND = 1
 
-# Some HA builds expose RemoteEntityFeature but without SEND_COMMAND (e.g. only learn/delete).
-# For our remote entity we only need the send_command service, so we fall back to bit 1.
-_FEATURE_SEND_COMMAND = getattr(RemoteEntityFeature, "SEND_COMMAND", 1)
+def _get_send_feature() -> object:
+    """Return the 'send command' feature constant across HA versions."""
+    for name in ("SEND_COMMAND", "COMMAND", "SEND"):
+        f = getattr(RemoteEntityFeature, name, None)
+        if f is not None:
+            return f
+    # Last resort: legacy bit value.
+    return 1
+
+
+_SEND_FEATURE = _get_send_feature()
+
+
+class _CompatSupportedFeatures:
+    """Adapter that works for HA versions that treat supported_features as int or iterable."""
+
+    def __init__(self, features: list[object]) -> None:
+        self._features = list(features)
+        self._set = set(features)
+        mask = 0
+        for f in features:
+            try:
+                mask |= int(f)  # IntFlag and some Enums are int-convertible
+            except Exception:
+                pass
+        self._mask = mask
+
+    def __iter__(self):
+        return iter(self._features)
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._set
+
+    def __int__(self) -> int:
+        return int(self._mask)
+
+    def __index__(self) -> int:
+        return int(self._mask)
+
+    def __bool__(self) -> bool:
+        return bool(self._mask) or bool(self._features)
+
+    def __and__(self, other: object) -> int:
+        try:
+            return int(self) & int(other)  # type: ignore[arg-type]
+        except Exception:
+            return 0
+
+    def __rand__(self, other: object) -> int:
+        return self.__and__(other)
+
+    def __or__(self, other: object) -> int:
+        try:
+            return int(self) | int(other)  # type: ignore[arg-type]
+        except Exception:
+            return int(self)
+
+    def __ror__(self, other: object) -> int:
+        return self.__or__(other)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -49,7 +105,10 @@ async def async_setup_entry(
 
 class SamsungSmartThingsRemote(SamsungSmartThingsEntity, RemoteEntity):
     _attr_has_entity_name = True
-    _attr_supported_features = _FEATURE_SEND_COMMAND
+
+    @property
+    def supported_features(self):  # type: ignore[override]
+        return _CompatSupportedFeatures([_SEND_FEATURE])
 
     def __init__(self, coordinator: SmartThingsCoordinator) -> None:
         super().__init__(coordinator)
