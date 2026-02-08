@@ -44,6 +44,7 @@ from .smartthings_api import SmartThingsApi
 from .soundbar_local_api import AsyncSoundbarLocal, SoundbarLocalError
 
 _LOGGER = logging.getLogger(__name__)
+OAUTH2_TOKEN_KEY = getattr(config_entry_oauth2_flow, "CONF_TOKEN", "token")
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -52,10 +53,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version < 4:
         data = dict(entry.data)
         # Old PAT entries stored the token under "token" (string). OAuth2 entries will
-        # store a dict under config_entry_oauth2_flow.CONF_TOKEN ("token").
-        old = data.get(config_entry_oauth2_flow.CONF_TOKEN)
+        # store a dict under the OAuth2 token key ("token").
+        old = data.get(OAUTH2_TOKEN_KEY)
         if isinstance(old, str) and old and CONF_PAT_TOKEN not in data:
-            data.pop(config_entry_oauth2_flow.CONF_TOKEN, None)
+            data.pop(OAUTH2_TOKEN_KEY, None)
             data[CONF_PAT_TOKEN] = old
         hass.config_entries.async_update_entry(entry, data=data, version=4)
     return True
@@ -315,7 +316,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return True
 
     pat_token = entry.data.get(CONF_PAT_TOKEN)
-    oauth_token = entry.data.get(config_entry_oauth2_flow.CONF_TOKEN)
+    oauth_token = entry.data.get(OAUTH2_TOKEN_KEY)
     if not isinstance(pat_token, str) or not pat_token:
         pat_token = None
     if not isinstance(oauth_token, dict):

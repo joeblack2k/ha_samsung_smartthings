@@ -32,6 +32,7 @@ from .const import (
 from .smartthings_api import SmartThingsApi
 
 _LOGGER = logging.getLogger(__name__)
+OAUTH2_TOKEN_KEY = getattr(config_entry_oauth2_flow, "CONF_TOKEN", "token")
 
 
 def _token_key(token: str) -> str:
@@ -153,7 +154,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         # Try to use SmartThings' installed_app_id (when present) for uniqueness.
         installed_app_id = None
         try:
-            installed_app_id = (data.get(config_entry_oauth2_flow.CONF_TOKEN) or {}).get("installed_app_id")
+            installed_app_id = (data.get(OAUTH2_TOKEN_KEY) or {}).get("installed_app_id")
         except Exception:
             installed_app_id = None
 
