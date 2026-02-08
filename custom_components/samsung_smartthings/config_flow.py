@@ -49,6 +49,9 @@ async def _validate_token(hass, token: str) -> dict[str, Any]:
 class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
     """Config flow: SmartThings Cloud (OAuth2 or PAT) and Soundbar Local (LAN)."""
 
+    # Some HA versions require this to be set explicitly for OAuth2 flows.
+    DOMAIN = DOMAIN
+
     VERSION = 4
 
     @property
