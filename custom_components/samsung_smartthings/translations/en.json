@@ -2,10 +2,25 @@
   "config": {
     "step": {
       "user": {
-        "title": "Samsung SmartThings (Cloud)",
-        "description": "Enter your SmartThings Personal Access Token. This integration creates a hub entry and automatically adds all devices found in your SmartThings account.",
+        "title": "Samsung SmartThings",
+        "description": "Choose how you want to connect. OAuth2 is recommended for a permanent setup. PAT tokens may be short-lived. Local Soundbar connects directly on your LAN.",
         "data": {
-          "token": "Personal Access Token"
+          "entry_type": "Setup type"
+        }
+      },
+      "cloud_pat": {
+        "title": "SmartThings Cloud (PAT)",
+        "description": "Enter your SmartThings Personal Access Token (PAT). Note: SmartThings PATs may expire (often 24 hours).",
+        "data": {
+          "pat_token": "Personal Access Token"
+        }
+      },
+      "soundbar_local": {
+        "title": "Soundbar Local (LAN)",
+        "description": "Connect directly to a supported 2024 Samsung Wi-Fi soundbar on your LAN (HTTPS JSON-RPC on port 1516). Enable IP control in the SmartThings app first.",
+        "data": {
+          "host": "Soundbar IP address",
+          "verify_ssl": "Verify SSL certificate (usually off)"
         }
       }
     },

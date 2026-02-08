@@ -25,11 +25,23 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 1. Home Assistant: Settings -> Devices & services -> Add integration
 2. Search for `Samsung SmartThings (Cloud)`
 3. Choose the setup type:
-   - `SmartThings Cloud (token)` (default)
+   - `SmartThings Cloud (OAuth2, recommended)` (permanent login)
+   - `SmartThings Cloud (PAT token)` (temporary; SmartThings PATs may expire in 24h)
    - `Soundbar Local (LAN)` (optional, for supported 2024 Wi-Fi soundbars)
-4. Paste a SmartThings Personal Access Token (Cloud) OR enter the soundbar IP address (Local)
-5. Cloud mode: the integration adds a single “hub” entry for that token and auto-discovers all Samsung devices on the account
+4. OAuth2: create Application Credentials for SmartThings (client id/secret + redirect URL), then complete the login flow
+5. PAT: paste a SmartThings Personal Access Token
+6. Cloud mode: the integration adds a single “hub” entry and auto-discovers all Samsung devices on the account
 6. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
+
+### SmartThings Cloud OAuth2 (Recommended, permanent)
+
+SmartThings Personal Access Tokens may be short-lived (often 24 hours). For a permanent setup, use OAuth2.
+
+High-level steps:
+1. Create a SmartThings API app with OAuth in the SmartThings Developer Workspace
+2. Add Home Assistant's OAuth redirect URL to that app (typically `<your_ha_base_url>/auth/external/callback`)
+3. In Home Assistant, create **Application Credentials** for SmartThings (client id/secret)
+4. Add the integration and choose `SmartThings Cloud (OAuth2, recommended)`
 
 ### Soundbar Local (LAN) Setup (2024 Wi-Fi soundbars)
 

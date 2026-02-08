@@ -43,50 +43,71 @@ def retry_after_seconds(exc: ClientResponseError) -> float | None:
 class SmartThingsApi:
     """Minimal SmartThings REST client using Home Assistant's shared aiohttp session."""
 
-    def __init__(self, hass: HomeAssistant, token: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        pat_token: str | None = None,
+        oauth_session: Any | None = None,
+        lock_key: str | None = None,
+    ) -> None:
         self._hass = hass
-        self._token = token
-        # Serialize requests per token to reduce bursts (SmartThings rate-limits easily).
+        self._pat_token = pat_token
+        self._oauth_session = oauth_session
+        # Serialize requests per entry/auth to reduce bursts (SmartThings rate-limits easily).
         locks = hass.data.setdefault(DOMAIN, {}).setdefault("_api_locks", {})
-        self._lock: asyncio.Lock = locks.setdefault(_token_key(token), asyncio.Lock())
+        if not lock_key:
+            if pat_token:
+                lock_key = _token_key(pat_token)
+            else:
+                lock_key = "oauth"
+        self._lock: asyncio.Lock = locks.setdefault(str(lock_key), asyncio.Lock())
 
     @property
     def token(self) -> str:
-        return self._token
+        # Back-compat for callers that expect a string token.
+        # For OAuth2, this returns an empty string.
+        return self._pat_token or ""
 
     async def _request(self, method: str, path: str, *, json_body: dict[str, Any] | None = None) -> Any:
         session = async_get_clientsession(self._hass)
         url = path if path.startswith("http://") or path.startswith("https://") else f"{API_BASE}{path}"
-        headers = {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": "application/json",
-        }
+        headers = {"Accept": "application/json"}
+        if self._pat_token:
+            headers["Authorization"] = f"Bearer {self._pat_token}"
         async with self._lock:
-            async with session.request(method, url, headers=headers, json=json_body) as resp:
-                # Read the body first so we can include it in any raised error.
-                text = await resp.text()
-
-                if resp.status >= 400:
-                    # Avoid logging secrets (token is only in headers, not the body).
-                    snippet = (text or "").strip()
-                    if len(snippet) > 800:
-                        snippet = snippet[:800] + "..."
-                    msg = f"SmartThings API error {resp.status} for {method} {url}: {snippet}"
-                    raise ClientResponseError(
-                        resp.request_info,
-                        resp.history,
-                        status=resp.status,
-                        message=msg,
-                        headers=resp.headers,
-                    )
-
-                # SmartThings sometimes returns empty body for 202.
-                if not text:
-                    return None
+            # OAuth2 session handles refresh and writes updated tokens back to the config entry.
+            if self._oauth_session is not None:
+                resp = await self._oauth_session.async_request(method, url, headers=headers, json=json_body)
                 try:
-                    return json.loads(text)
-                except Exception:
-                    return text
+                    text = await resp.text()
+                finally:
+                    resp.release()
+            else:
+                async with session.request(method, url, headers=headers, json=json_body) as resp:
+                    text = await resp.text()
+
+            if resp.status >= 400:
+                # Avoid logging secrets (token is only in headers, not the body).
+                snippet = (text or "").strip()
+                if len(snippet) > 800:
+                    snippet = snippet[:800] + "..."
+                msg = f"SmartThings API error {resp.status} for {method} {url}: {snippet}"
+                raise ClientResponseError(
+                    resp.request_info,
+                    resp.history,
+                    status=resp.status,
+                    message=msg,
+                    headers=resp.headers,
+                )
+
+            # SmartThings sometimes returns empty body for 202.
+            if not text:
+                return None
+            try:
+                return json.loads(text)
+            except Exception:
+                return text
 
     async def list_devices(self) -> list[dict[str, Any]]:
         # Best effort pagination. In practice most accounts are small enough.

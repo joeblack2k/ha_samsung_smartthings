@@ -13,6 +13,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -24,8 +25,8 @@ from .const import (
     CONF_HOST as CONF_HOST_LOCAL,
     CONF_INCLUDE_NON_SAMSUNG,
     CONF_MANAGE_DIAGNOSTICS,
+    CONF_PAT_TOKEN,
     CONF_SCAN_INTERVAL,
-    CONF_TOKEN,
     CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_EXPOSE_ALL,
@@ -47,10 +48,16 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entries to the latest version."""
-    # v3 introduced a multi-path config flow (cloud token + local soundbar).
-    # Existing entries are cloud-token based and can be migrated by bumping version.
-    if entry.version < 3:
-        hass.config_entries.async_update_entry(entry, version=3)
+    # v4 introduced OAuth2 support and renamed PAT storage key.
+    if entry.version < 4:
+        data = dict(entry.data)
+        # Old PAT entries stored the token under "token" (string). OAuth2 entries will
+        # store a dict under config_entry_oauth2_flow.CONF_TOKEN ("token").
+        old = data.get(config_entry_oauth2_flow.CONF_TOKEN)
+        if isinstance(old, str) and old and CONF_PAT_TOKEN not in data:
+            data.pop(config_entry_oauth2_flow.CONF_TOKEN, None)
+            data[CONF_PAT_TOKEN] = old
+        hass.config_entries.async_update_entry(entry, data=data, version=4)
     return True
 
 
@@ -77,14 +84,16 @@ async def _ensure_discovery_task(hass: HomeAssistant, entry: ConfigEntry) -> Non
     if entry.pref_disable_new_entities:
         return
 
-    token = entry.data.get(CONF_TOKEN)
-    if not isinstance(token, str) or not token:
+    dom = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    api: SmartThingsApi | None = dom.get("api")
+    hub_id = dom.get("hub_id")
+    if not isinstance(hub_id, str) or not hub_id:
+        hub_id = f"entry_{entry.entry_id[:8]}"
+    if api is None:
         return
 
-    api = SmartThingsApi(hass, token)
-    hub_id = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("hub_id")
     if not isinstance(hub_id, str) or not hub_id:
-        hub_id = await _get_hub_id(api, token)
+        hub_id = f"entry_{entry.entry_id[:8]}"
 
     opts = entry.options or {}
     discovery_interval = int(opts.get(CONF_DISCOVERY_INTERVAL, entry.data.get(CONF_DISCOVERY_INTERVAL, DEFAULT_DISCOVERY_INTERVAL)))
@@ -305,34 +314,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "sensor"])
         return True
 
-    token = entry.data.get(CONF_TOKEN)
-    if not isinstance(token, str) or not token:
-        _LOGGER.error("[%s] Missing %s in config entry %s", DOMAIN, CONF_TOKEN, entry.entry_id)
+    pat_token = entry.data.get(CONF_PAT_TOKEN)
+    oauth_token = entry.data.get(config_entry_oauth2_flow.CONF_TOKEN)
+    if not isinstance(pat_token, str) or not pat_token:
+        pat_token = None
+    if not isinstance(oauth_token, dict):
+        oauth_token = None
+
+    if not pat_token and not oauth_token:
+        _LOGGER.error("[%s] Missing auth in config entry %s", DOMAIN, entry.entry_id)
         return False
 
-    # Back-compat migration: old entries stored device_id/device_name/scan_interval/etc in data.
-    # We keep behavior as "hub per token" regardless; device_id is ignored.
-    if set(entry.data.keys()) != {CONF_TOKEN}:
-        new_opts = dict(entry.options or {})
-        # Preserve legacy settings when present.
-        if CONF_EXPOSE_ALL not in new_opts and CONF_EXPOSE_ALL in entry.data:
-            new_opts[CONF_EXPOSE_ALL] = bool(entry.data.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
-        if CONF_SCAN_INTERVAL not in new_opts and CONF_SCAN_INTERVAL in entry.data:
-            try:
-                new_opts[CONF_SCAN_INTERVAL] = int(entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-            except Exception:
-                pass
-        if CONF_DISCOVERY_INTERVAL not in new_opts and CONF_DISCOVERY_INTERVAL in entry.data:
-            try:
-                new_opts[CONF_DISCOVERY_INTERVAL] = int(entry.data.get(CONF_DISCOVERY_INTERVAL, DEFAULT_DISCOVERY_INTERVAL))
-            except Exception:
-                pass
-        if CONF_INCLUDE_NON_SAMSUNG not in new_opts and CONF_INCLUDE_NON_SAMSUNG in entry.data:
-            new_opts[CONF_INCLUDE_NON_SAMSUNG] = bool(entry.data.get(CONF_INCLUDE_NON_SAMSUNG, DEFAULT_INCLUDE_NON_SAMSUNG))
+    # Migrate settings from entry.data into entry.options; keep entry.data auth-only.
+    settings_keys = (
+        CONF_EXPOSE_ALL,
+        CONF_SCAN_INTERVAL,
+        CONF_DISCOVERY_INTERVAL,
+        CONF_INCLUDE_NON_SAMSUNG,
+        CONF_MANAGE_DIAGNOSTICS,
+    )
+    new_opts = dict(entry.options or {})
+    moved = False
+    for k in settings_keys:
+        if k in entry.data and k not in new_opts:
+            new_opts[k] = entry.data.get(k)
+            moved = True
+    new_data = dict(entry.data)
+    for k in settings_keys:
+        new_data.pop(k, None)
+    if CONF_ENTRY_TYPE not in new_data:
+        new_data[CONF_ENTRY_TYPE] = ENTRY_TYPE_CLOUD
+    if moved or new_data != dict(entry.data):
+        hass.config_entries.async_update_entry(entry, data=new_data, options=new_opts)
 
-        hass.config_entries.async_update_entry(entry, data={CONF_TOKEN: token}, options=new_opts)
-
-    opts = entry.options or {}
+    opts = new_opts or entry.options or {}
     expose_all = bool(opts.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
     raw_scan_interval = int(opts.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
     # SmartThings cloud rate-limits aggressively; keep a safe floor.
@@ -344,8 +359,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     include_non_samsung = bool(opts.get(CONF_INCLUDE_NON_SAMSUNG, DEFAULT_INCLUDE_NON_SAMSUNG))
     manage_diagnostics = bool(opts.get(CONF_MANAGE_DIAGNOSTICS, DEFAULT_MANAGE_DIAGNOSTICS))
 
-    api = SmartThingsApi(hass, token)
-    hub_id = await _get_hub_id(api, token)
+    oauth_session = None
+    if oauth_token is not None:
+        impl = await config_entry_oauth2_flow.async_get_config_entry_implementation(hass, entry)
+        oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, impl)
+        api = SmartThingsApi(hass, oauth_session=oauth_session, lock_key=entry.entry_id)
+        installed_app_id = oauth_token.get("installed_app_id")
+        hub_id = f"oauth_{installed_app_id}" if isinstance(installed_app_id, str) and installed_app_id else f"oauth_{entry.entry_id[:8]}"
+    else:
+        api = SmartThingsApi(hass, pat_token=pat_token, lock_key=entry.entry_id)
+        hub_id = await _get_hub_id(api, pat_token)
 
     # Create a hub device to nest all SmartThings devices under it.
     from homeassistant.helpers import device_registry as dr
@@ -364,7 +387,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         devices = await api.list_devices()
     except ClientResponseError as exc:
         if exc.status == 401:
-            raise ConfigEntryAuthFailed("Invalid SmartThings token") from exc
+            if oauth_token is not None:
+                raise ConfigEntryAuthFailed("SmartThings authorization expired") from exc
+            raise ConfigEntryAuthFailed("Invalid SmartThings PAT token") from exc
         raise ConfigEntryNotReady(f"SmartThings API error {exc.status}") from exc
     except Exception as exc:
         raise ConfigEntryNotReady("SmartThings API not reachable") from exc

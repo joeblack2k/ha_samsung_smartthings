@@ -1,6 +1,10 @@
 DOMAIN = "samsung_smartthings"
 
-CONF_TOKEN = "token"
+# Cloud auth modes:
+# - OAuth2 (preferred): uses Home Assistant Application Credentials, stores token dict under
+#   config_entry_oauth2_flow.CONF_TOKEN (key: "token").
+# - PAT (fallback): stores a SmartThings Personal Access Token under CONF_PAT_TOKEN.
+CONF_PAT_TOKEN = "pat_token"
 CONF_ENTRY_TYPE = "entry_type"
 ENTRY_TYPE_CLOUD = "cloud"
 ENTRY_TYPE_SOUNDBAR_LOCAL = "soundbar_local"
