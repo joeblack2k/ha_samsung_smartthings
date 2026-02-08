@@ -5,6 +5,8 @@ DOMAIN = "samsung_smartthings"
 #   config_entry_oauth2_flow.CONF_TOKEN (key: "token").
 # - PAT (fallback): stores a SmartThings Personal Access Token under CONF_PAT_TOKEN.
 CONF_PAT_TOKEN = "pat_token"
+# Optional: reference an existing Home Assistant SmartThings config entry for auth (no extra login).
+CONF_SMARTTHINGS_ENTRY_ID = "smartthings_entry_id"
 CONF_ENTRY_TYPE = "entry_type"
 ENTRY_TYPE_CLOUD = "cloud"
 ENTRY_TYPE_SOUNDBAR_LOCAL = "soundbar_local"

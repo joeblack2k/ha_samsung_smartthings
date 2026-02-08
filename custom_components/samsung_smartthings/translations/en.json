@@ -3,9 +3,16 @@
     "step": {
       "user": {
         "title": "Samsung SmartThings",
-        "description": "Choose how you want to connect. OAuth2 is recommended for a permanent setup. PAT tokens may be short-lived. Local Soundbar connects directly on your LAN.",
+        "description": "Choose how you want to connect. Recommended: reuse the existing Home Assistant SmartThings login (no credentials). OAuth2 (bring your own app) is for developers. PAT tokens may be short-lived. Local Soundbar connects directly on your LAN.",
         "data": {
           "entry_type": "Setup type"
+        }
+      },
+      "cloud_ha_smartthings": {
+        "title": "SmartThings Cloud (Home Assistant SmartThings)",
+        "description": "Select which existing Home Assistant SmartThings account to reuse for authentication.",
+        "data": {
+          "smartthings_entry_id": "Home Assistant SmartThings account"
         }
       },
       "cloud_pat": {
@@ -27,11 +34,13 @@
     "error": {
       "cannot_connect": "Failed to connect to SmartThings.",
       "invalid_auth": "Invalid token.",
+      "invalid_ha_smartthings": "Please select a valid Home Assistant SmartThings account.",
       "invalid_scan_interval": "Invalid polling interval.",
       "invalid_discovery_interval": "Invalid discovery interval."
     },
     "abort": {
-      "already_configured": "This SmartThings account is already configured."
+      "already_configured": "This SmartThings account is already configured.",
+      "no_ha_smartthings": "No Home Assistant SmartThings integration found. Add the built-in SmartThings integration first, then come back and choose this option."
     }
   },
   "options": {

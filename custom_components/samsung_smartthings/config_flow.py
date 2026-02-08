@@ -18,6 +18,7 @@ from .const import (
     CONF_INCLUDE_NON_SAMSUNG,
     CONF_MANAGE_DIAGNOSTICS,
     CONF_PAT_TOKEN,
+    CONF_SMARTTHINGS_ENTRY_ID,
     CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
@@ -33,6 +34,10 @@ from .smartthings_api import SmartThingsApi
 
 _LOGGER = logging.getLogger(__name__)
 OAUTH2_TOKEN_KEY = getattr(config_entry_oauth2_flow, "CONF_TOKEN", "token")
+
+# Cloud setup choices (used only inside this config flow UI).
+CLOUD_SETUP_HA_SMARTTHINGS = "cloud_ha_smartthings"
+CLOUD_SETUP_OAUTH_APP_CREDENTIALS = "cloud_oauth"
 
 
 def _token_key(token: str) -> str:
@@ -65,7 +70,9 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             t = user_input.get(CONF_ENTRY_TYPE)
             if t == ENTRY_TYPE_SOUNDBAR_LOCAL:
                 return await self.async_step_soundbar_local()
-            if t == "cloud_oauth":
+            if t == CLOUD_SETUP_HA_SMARTTHINGS:
+                return await self.async_step_cloud_ha_smartthings()
+            if t == CLOUD_SETUP_OAUTH_APP_CREDENTIALS:
                 return await self.async_step_pick_implementation()
             return await self.async_step_cloud_pat()
 
@@ -73,15 +80,70 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ENTRY_TYPE, default="cloud_oauth"): vol.In(
+                    vol.Required(CONF_ENTRY_TYPE, default=CLOUD_SETUP_HA_SMARTTHINGS): vol.In(
                         {
-                            "cloud_oauth": "SmartThings Cloud (OAuth2, recommended)",
+                            CLOUD_SETUP_HA_SMARTTHINGS: "SmartThings Cloud (Use Home Assistant SmartThings login, recommended)",
+                            CLOUD_SETUP_OAUTH_APP_CREDENTIALS: "SmartThings Cloud (OAuth2, bring your own app)",
                             ENTRY_TYPE_CLOUD: "SmartThings Cloud (PAT token)",
                             ENTRY_TYPE_SOUNDBAR_LOCAL: "Soundbar Local (LAN)",
                         }
                     )
                 }
             ),
+        )
+
+    async def async_step_cloud_ha_smartthings(self, user_input: dict[str, Any] | None = None):
+        """Use an existing Home Assistant SmartThings config entry as auth."""
+        st_entries = list(self.hass.config_entries.async_entries("smartthings"))
+        if not st_entries:
+            return self.async_abort(reason="no_ha_smartthings")
+
+        # If there's only one SmartThings account configured, just link it.
+        if user_input is None and len(st_entries) == 1:
+            st_entry = st_entries[0]
+            await self.async_set_unique_id(f"ha_smartthings_{st_entry.entry_id}")
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title=f"Samsung SmartThings (Cloud) - {st_entry.title or 'SmartThings'}",
+                data={
+                    CONF_SMARTTHINGS_ENTRY_ID: st_entry.entry_id,
+                    CONF_EXPOSE_ALL: DEFAULT_EXPOSE_ALL,
+                    CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                    CONF_DISCOVERY_INTERVAL: DEFAULT_DISCOVERY_INTERVAL,
+                    CONF_INCLUDE_NON_SAMSUNG: DEFAULT_INCLUDE_NON_SAMSUNG,
+                    CONF_MANAGE_DIAGNOSTICS: DEFAULT_MANAGE_DIAGNOSTICS,
+                    CONF_ENTRY_TYPE: ENTRY_TYPE_CLOUD,
+                },
+            )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entry_id = str(user_input.get(CONF_SMARTTHINGS_ENTRY_ID, "") or "").strip()
+            st_entry = next((e for e in st_entries if e.entry_id == entry_id), None)
+            if st_entry is None:
+                errors["base"] = "invalid_ha_smartthings"
+            else:
+                await self.async_set_unique_id(f"ha_smartthings_{st_entry.entry_id}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"Samsung SmartThings (Cloud) - {st_entry.title or 'SmartThings'}",
+                    data={
+                        CONF_SMARTTHINGS_ENTRY_ID: st_entry.entry_id,
+                        CONF_EXPOSE_ALL: DEFAULT_EXPOSE_ALL,
+                        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                        CONF_DISCOVERY_INTERVAL: DEFAULT_DISCOVERY_INTERVAL,
+                        CONF_INCLUDE_NON_SAMSUNG: DEFAULT_INCLUDE_NON_SAMSUNG,
+                        CONF_MANAGE_DIAGNOSTICS: DEFAULT_MANAGE_DIAGNOSTICS,
+                        CONF_ENTRY_TYPE: ENTRY_TYPE_CLOUD,
+                    },
+                )
+
+        # Let the user pick which SmartThings account to link to.
+        choices = {e.entry_id: (e.title or e.unique_id or e.entry_id) for e in st_entries}
+        return self.async_show_form(
+            step_id="cloud_ha_smartthings",
+            data_schema=vol.Schema({vol.Required(CONF_SMARTTHINGS_ENTRY_ID): vol.In(choices)}),
+            errors=errors,
         )
 
     async def async_step_cloud_pat(self, user_input: dict[str, Any] | None = None):

@@ -26,6 +26,7 @@ from .const import (
     CONF_INCLUDE_NON_SAMSUNG,
     CONF_MANAGE_DIAGNOSTICS,
     CONF_PAT_TOKEN,
+    CONF_SMARTTHINGS_ENTRY_ID,
     CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
@@ -315,14 +316,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "sensor"])
         return True
 
+    st_entry_id = entry.data.get(CONF_SMARTTHINGS_ENTRY_ID)
     pat_token = entry.data.get(CONF_PAT_TOKEN)
     oauth_token = entry.data.get(OAUTH2_TOKEN_KEY)
+    if not isinstance(st_entry_id, str) or not st_entry_id:
+        st_entry_id = None
     if not isinstance(pat_token, str) or not pat_token:
         pat_token = None
     if not isinstance(oauth_token, dict):
         oauth_token = None
 
-    if not pat_token and not oauth_token:
+    if not st_entry_id and not pat_token and not oauth_token:
         _LOGGER.error("[%s] Missing auth in config entry %s", DOMAIN, entry.entry_id)
         return False
 
@@ -361,13 +365,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manage_diagnostics = bool(opts.get(CONF_MANAGE_DIAGNOSTICS, DEFAULT_MANAGE_DIAGNOSTICS))
 
     oauth_session = None
-    if oauth_token is not None:
+    auth_is_oauth = False
+    if st_entry_id is not None:
+        # Recommended mode: reuse the built-in Home Assistant SmartThings integration's OAuth session.
+        st_entry = hass.config_entries.async_get_entry(st_entry_id)
+        if st_entry is None:
+            _LOGGER.error("[%s] Linked SmartThings config entry not found: %s", DOMAIN, st_entry_id)
+            return False
+
+        impl = await config_entry_oauth2_flow.async_get_config_entry_implementation(hass, st_entry)
+        oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, st_entry, impl)
+        api = SmartThingsApi(hass, oauth_session=oauth_session, lock_key=st_entry.entry_id)
+        token = st_entry.data.get(OAUTH2_TOKEN_KEY)
+        installed_app_id = token.get("installed_app_id") if isinstance(token, dict) else None
+        hub_id = (
+            f"oauth_{installed_app_id}"
+            if isinstance(installed_app_id, str) and installed_app_id
+            else f"oauth_{st_entry.entry_id[:8]}"
+        )
+        auth_is_oauth = True
+    elif oauth_token is not None:
+        # Advanced mode: OAuth2 with user-provided Application Credentials.
         impl = await config_entry_oauth2_flow.async_get_config_entry_implementation(hass, entry)
         oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, impl)
         api = SmartThingsApi(hass, oauth_session=oauth_session, lock_key=entry.entry_id)
         installed_app_id = oauth_token.get("installed_app_id")
-        hub_id = f"oauth_{installed_app_id}" if isinstance(installed_app_id, str) and installed_app_id else f"oauth_{entry.entry_id[:8]}"
+        hub_id = (
+            f"oauth_{installed_app_id}"
+            if isinstance(installed_app_id, str) and installed_app_id
+            else f"oauth_{entry.entry_id[:8]}"
+        )
+        auth_is_oauth = True
     else:
+        # Fallback: PAT token.
         api = SmartThingsApi(hass, pat_token=pat_token, lock_key=entry.entry_id)
         hub_id = await _get_hub_id(api, pat_token)
 
@@ -388,8 +418,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         devices = await api.list_devices()
     except ClientResponseError as exc:
         if exc.status == 401:
-            if oauth_token is not None:
-                raise ConfigEntryAuthFailed("SmartThings authorization expired") from exc
+            if auth_is_oauth:
+                raise ConfigEntryAuthFailed(
+                    "SmartThings authorization expired. Re-authenticate the Home Assistant SmartThings integration."
+                ) from exc
             raise ConfigEntryAuthFailed("Invalid SmartThings PAT token") from exc
         raise ConfigEntryNotReady(f"SmartThings API error {exc.status}") from exc
     except Exception as exc:

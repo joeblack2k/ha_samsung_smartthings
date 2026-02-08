@@ -25,15 +25,27 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 1. Home Assistant: Settings -> Devices & services -> Add integration
 2. Search for `Samsung SmartThings (Cloud)`
 3. Choose the setup type:
-   - `SmartThings Cloud (OAuth2, recommended)` (permanent login)
+   - `SmartThings Cloud (Use Home Assistant SmartThings login, recommended)` (easy, permanent login)
+   - `SmartThings Cloud (OAuth2, bring your own app)` (developer/advanced)
    - `SmartThings Cloud (PAT token)` (temporary; SmartThings PATs may expire in 24h)
    - `Soundbar Local (LAN)` (optional, for supported 2024 Wi-Fi soundbars)
-4. OAuth2: create Application Credentials for SmartThings (client id/secret + redirect URL), then complete the login flow
-5. PAT: paste a SmartThings Personal Access Token
-6. Cloud mode: the integration adds a single “hub” entry and auto-discovers all Samsung devices on the account
-6. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
+4. Home Assistant SmartThings login: this reuses the built-in Home Assistant `SmartThings` integration's OAuth login. If you don't have it yet, add the built-in SmartThings integration first (it will open SmartThings in your browser and return to HA).
+5. OAuth2 (bring your own app): create Application Credentials for SmartThings (client id/secret + redirect URL), then complete the login flow
+6. PAT: paste a SmartThings Personal Access Token
+7. Cloud mode: the integration adds a single “hub” entry and auto-discovers all Samsung devices on the account
+8. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
 
-### SmartThings Cloud OAuth2 (Recommended, permanent)
+### SmartThings Cloud (Use Home Assistant SmartThings login, recommended)
+
+This is the easiest setup for normal users. No SmartThings CLI, no developer app registration, no client secret handling.
+
+Steps:
+1. Add the built-in **SmartThings** integration in Home Assistant (if you haven't already)
+2. Add **Samsung SmartThings (Cloud)** (this integration)
+3. Choose `SmartThings Cloud (Use Home Assistant SmartThings login, recommended)`
+4. Select the SmartThings account/location you want to reuse
+
+### SmartThings Cloud OAuth2 (Bring Your Own App, advanced)
 
 SmartThings Personal Access Tokens may be short-lived (often 24 hours). For a permanent setup, use OAuth2.
 
@@ -41,7 +53,7 @@ High-level steps:
 1. Create a SmartThings API app with OAuth in the SmartThings Developer Workspace
 2. Add Home Assistant's OAuth redirect URL to that app (typically `<your_ha_base_url>/auth/external/callback`)
 3. In Home Assistant, create **Application Credentials** for SmartThings (client id/secret)
-4. Add the integration and choose `SmartThings Cloud (OAuth2, recommended)`
+4. Add the integration and choose `SmartThings Cloud (OAuth2, bring your own app)`
 
 ### Soundbar Local (LAN) Setup (2024 Wi-Fi soundbars)
 
