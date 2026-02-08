@@ -51,6 +51,11 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
 
     VERSION = 4
 
+    @property
+    def logger(self) -> logging.Logger:
+        # HA's AbstractOAuth2FlowHandler expects a logger property on some versions.
+        return _LOGGER
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Pick setup type (Cloud or Local soundbar)."""
         if user_input is not None:
