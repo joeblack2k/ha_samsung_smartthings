@@ -48,6 +48,8 @@ async def async_setup_entry(
             ("main", "ocf", "mnmo"),
             ("main", "ocf", "mnfv"),
             ("main", "samsungvd.thingStatus", "status"),
+            ("main", "custom.picturemode", "pictureMode"),
+            ("main", "custom.soundmode", "soundMode"),
         }
 
         # Expose *all* attributes as sensors when enabled.
@@ -92,6 +94,26 @@ async def async_setup_entry(
                 lambda d: d.get_attr("samsungvd.thingStatus", "status"),
             )
         )
+
+        # TV: expose picture/sound mode as read-only sensors by default.
+        if dev.has_capability("custom.picturemode"):
+            entities.append(
+                SamsungSmartThingsSimpleSensor(
+                    coordinator,
+                    "picture_mode",
+                    "Picture Mode",
+                    lambda d: d.get_attr("custom.picturemode", "pictureMode"),
+                )
+            )
+        if dev.has_capability("custom.soundmode"):
+            entities.append(
+                SamsungSmartThingsSimpleSensor(
+                    coordinator,
+                    "sound_mode",
+                    "Sound Mode",
+                    lambda d: d.get_attr("custom.soundmode", "soundMode"),
+                )
+            )
 
         # Soundbar: show the current audio input source as a read-only sensor.
         # Many soundbars expose supported sources but SmartThings cloud often cannot

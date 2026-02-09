@@ -40,12 +40,14 @@ async def async_setup_entry(
     for it in domain.get("items") or []:
         coordinator: SmartThingsCoordinator = it["coordinator"]
         dev = coordinator.device
+        expose_all = bool(dev.runtime and dev.runtime.expose_all)
 
-        # Picture mode
-        if dev.has_capability("custom.picturemode"):
+        # Picture/sound mode via SmartThings cloud is unreliable on some TVs: it may
+        # report stale values and/or not apply changes. Hide these selects by default
+        # and only expose them in "expose_all" (advanced) mode.
+        if expose_all and dev.has_capability("custom.picturemode"):
             entities.append(SamsungSmartThingsSelect(coordinator, _picture_mode_desc()))
-        # Sound mode
-        if dev.has_capability("custom.soundmode"):
+        if expose_all and dev.has_capability("custom.soundmode"):
             entities.append(SamsungSmartThingsSelect(coordinator, _sound_mode_desc()))
         # TV input source (Samsung map)
         if dev.has_capability("samsungvd.mediaInputSource"):
