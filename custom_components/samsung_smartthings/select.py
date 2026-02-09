@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from aiohttp import ClientResponseError
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -193,6 +195,16 @@ class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
         self._attr_name = desc.name
 
     @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        # TV picture/sound/input source settings return 409 when the TV is off.
+        if self.desc.capability in ("custom.picturemode", "custom.soundmode", "samsungvd.mediaInputSource"):
+            sw = self.device.get_attr("switch", "switch")
+            return sw in ("on", True)
+        return True
+
+    @property
     def options(self) -> list[str]:
         opts = self.desc.options_fn(self.device)
         return [x for x in opts if isinstance(x, str)]
@@ -208,8 +220,17 @@ class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
         return v
 
     async def async_select_option(self, option: str) -> None:
+        if self.desc.capability in ("custom.picturemode", "custom.soundmode", "samsungvd.mediaInputSource"):
+            sw = self.device.get_attr("switch", "switch")
+            if sw not in ("on", True):
+                raise HomeAssistantError(f"{self.desc.name} is only available when the TV is on")
         args = self.desc.to_args_fn(option, self.device)
-        await self.device.send_command(self.desc.capability, self.desc.command, arguments=args)
+        try:
+            await self.device.send_command(self.desc.capability, self.desc.command, arguments=args)
+        except ClientResponseError as exc:
+            if exc.status in (409, 422):
+                raise HomeAssistantError(f"SmartThings rejected {self.desc.name} for this device state") from exc
+            raise
         await self.coordinator.async_request_refresh()
 
 
