@@ -102,7 +102,10 @@ class _SoundbarExecuteSwitch(SamsungSmartThingsEntity, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self.device._sb_execute_supported is True
+        # Execute read-back is often missing in SmartThings cloud even when the command
+        # itself works. Only hide the entity when we've explicitly detected execute is
+        # unsupported (e.g. non-429 error).
+        return super().available and self.device._sb_execute_supported is not False
 
     @property
     def is_on(self) -> bool | None:

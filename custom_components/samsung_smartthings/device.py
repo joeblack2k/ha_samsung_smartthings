@@ -334,17 +334,17 @@ class SmartThingsDevice:
         self._sb_last_execute_poll = now
 
         try:
+            # Treat execute as supported as soon as we can successfully call it, even if
+            # SmartThings doesn't provide read-back state in the status payload.
+            # Many soundbars return empty payloads while still accepting execute commands.
+            if self._sb_execute_supported is None:
+                self._sb_execute_supported = True
+
             # Sound mode
             payload = await self.execute_query(EXECUTE_SOUNDMODE)
             if payload:
-                self._sb_execute_supported = True
                 self._sb_soundmodes = list(payload.get("x.com.samsung.networkaudio.supportedSoundmode") or [])
                 self._sb_soundmode = payload.get("x.com.samsung.networkaudio.soundmode")
-            else:
-                # First empty response — mark as unsupported to stop polling
-                if self._sb_execute_supported is None:
-                    self._sb_execute_supported = False
-                    return
 
             # Woofer
             payload = await self.execute_query(EXECUTE_WOOFER)
