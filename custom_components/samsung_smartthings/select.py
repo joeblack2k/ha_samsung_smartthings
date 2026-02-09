@@ -7,6 +7,7 @@ from aiohttp import ClientResponseError
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -373,6 +374,12 @@ class _SoundbarLocalSelect(SelectEntity):
         self._host = host
         self._attr_unique_id = f"soundbar_local_{host}_{key}"
         self._attr_name = name
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"soundbar_local_{host}")},
+            manufacturer="Samsung",
+            model="Soundbar (Local)",
+            name=f"Soundbar {host}",
+        )
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
