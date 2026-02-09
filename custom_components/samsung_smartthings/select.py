@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, RearSpeakerMode
+from .const import DOMAIN, RearSpeakerMode, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
 
@@ -31,6 +31,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
+    is_local_soundbar_entry = (
+        entry.data.get("entry_type") == ENTRY_TYPE_SOUNDBAR_LOCAL
+        or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL
+        or domain.get("host") is not None
+    )
     entities: list[SelectEntity] = []
     for it in domain.get("items") or []:
         coordinator: SmartThingsCoordinator = it["coordinator"]
@@ -47,7 +52,10 @@ async def async_setup_entry(
             entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
 
         # Soundbar audio input source (cycle-based)
-        if dev.has_capability("samsungvd.audioInputSource"):
+        # SmartThings cloud frequently fails to set inputs on many soundbars even if it can
+        # list the supported sources. Only expose the dropdown for the local LAN soundbar mode
+        # where it is deterministic. Cloud mode still exposes a read-only sensor + "Next input".
+        if is_local_soundbar_entry and dev.has_capability("samsungvd.audioInputSource"):
             entities.append(SoundbarInputSourceSelect(coordinator))
 
         # Soundbar execute-based selects (only if execute is available)

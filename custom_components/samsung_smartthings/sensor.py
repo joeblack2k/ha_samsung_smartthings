@@ -93,6 +93,19 @@ async def async_setup_entry(
             )
         )
 
+        # Soundbar: show the current audio input source as a read-only sensor.
+        # Many soundbars expose supported sources but SmartThings cloud often cannot
+        # reliably set them (dropdown would be misleading).
+        if dev.has_capability("samsungvd.audioInputSource"):
+            entities.append(
+                SamsungSmartThingsSimpleSensor(
+                    coordinator,
+                    "audio_input_source",
+                    "Audio Input Source",
+                    lambda d: d.get_attr("samsungvd.audioInputSource", "inputSource"),
+                )
+            )
+
     async_add_entities(entities)
 
 

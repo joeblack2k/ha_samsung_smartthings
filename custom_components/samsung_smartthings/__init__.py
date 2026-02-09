@@ -459,7 +459,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         items.append({"device": dev, "coordinator": coordinator})
 
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {"api": api, "hub_id": hub_id, "items": items}
+    hass.data[DOMAIN][entry.entry_id] = {"type": "cloud", "api": api, "hub_id": hub_id, "items": items}
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
