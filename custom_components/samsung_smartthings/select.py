@@ -8,9 +8,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, RearSpeakerMode, ENTRY_TYPE_SOUNDBAR_LOCAL
+from .const import CONF_ENTRY_TYPE, DOMAIN, RearSpeakerMode, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .soundbar_local_api import AsyncSoundbarLocal
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -31,6 +32,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL:
+        coordinator = domain["coordinator"]
+        soundbar: AsyncSoundbarLocal = domain["soundbar"]
+        host = domain.get("host") or "soundbar"
+        async_add_entities([SoundbarLocalInputSelect(coordinator, soundbar, host), SoundbarLocalSoundModeSelect(coordinator, soundbar, host)])
+        return
+
     is_local_soundbar_entry = (
         entry.data.get("entry_type") == ENTRY_TYPE_SOUNDBAR_LOCAL
         or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL
@@ -333,3 +341,61 @@ class SoundbarRearSpeakerModeSelect(SamsungSmartThingsEntity, SelectEntity):
         mode = RearSpeakerMode(option)
         await self.device.set_rear_speaker_mode(mode)
         await self.coordinator.async_request_refresh()
+
+
+class _SoundbarLocalSelect(SelectEntity):
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str, key: str, name: str) -> None:
+        self._coordinator = coordinator
+        self._soundbar = soundbar
+        self._host = host
+        self._attr_unique_id = f"soundbar_local_{host}_{key}"
+        self._attr_name = name
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.last_update_success
+
+
+class SoundbarLocalInputSelect(_SoundbarLocalSelect):
+    _SOURCES = ["HDMI_IN1", "HDMI_IN2", "E_ARC", "ARC", "D_IN", "BT", "WIFI_IDLE"]
+
+    def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str) -> None:
+        super().__init__(coordinator, soundbar, host, "select_input", "Input Source")
+
+    @property
+    def options(self) -> list[str]:
+        return list(self._SOURCES)
+
+    @property
+    def current_option(self) -> str | None:
+        v = self._coordinator.data.get("input")
+        return str(v) if isinstance(v, str) else None
+
+    async def async_select_option(self, option: str) -> None:
+        await self._soundbar.select_input(option)
+        await self._coordinator.async_request_refresh()
+
+
+class SoundbarLocalSoundModeSelect(_SoundbarLocalSelect):
+    _MODES = ["STANDARD", "SURROUND", "GAME", "MOVIE", "MUSIC", "CLEARVOICE", "DTS_VIRTUAL_X", "ADAPTIVE"]
+
+    def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str) -> None:
+        super().__init__(coordinator, soundbar, host, "select_sound_mode", "Sound Mode")
+
+    @property
+    def options(self) -> list[str]:
+        return list(self._MODES)
+
+    @property
+    def current_option(self) -> str | None:
+        v = self._coordinator.data.get("sound_mode")
+        return str(v) if isinstance(v, str) else None
+
+    async def async_select_option(self, option: str) -> None:
+        await self._soundbar.set_sound_mode(option)
+        await self._coordinator.async_request_refresh()

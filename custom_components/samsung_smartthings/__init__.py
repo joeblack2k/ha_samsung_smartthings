@@ -36,6 +36,7 @@ from .const import (
     DEFAULT_MANAGE_DIAGNOSTICS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    ENTRY_TYPE_CLOUD,
     ENTRY_TYPE_SOUNDBAR_LOCAL,
     PLATFORMS,
 )
@@ -313,7 +314,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "coordinator": coordinator,
         }
 
-        await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "sensor"])
+        # Local mode supports a curated subset of entities on top of media_player.
+        await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "sensor", "switch", "select"])
         return True
 
     st_entry_id = entry.data.get(CONF_SMARTTHINGS_ENTRY_ID)
@@ -486,7 +488,7 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or entry.data.get(CONF_HOST_LOCAL):
-        unload_ok = await hass.config_entries.async_unload_platforms(entry, ["media_player", "sensor"])
+        unload_ok = await hass.config_entries.async_unload_platforms(entry, ["media_player", "sensor", "switch", "select"])
         if unload_ok:
             hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
             if not hass.data.get(DOMAIN):
