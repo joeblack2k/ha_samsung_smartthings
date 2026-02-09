@@ -513,6 +513,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _hide_disable_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Hide/disable known-noisy entities for this entry (diagnostics + expose_all noise)."""
+    # Persisted one-shot marker: after the first cleanup, never re-apply on restart.
+    if bool((entry.options or {}).get("_diagnostic_cleanup_done", False)):
+        return
+
     # Only run once per HA runtime for this entry. Otherwise a config-entry reload can
     # re-disable entities the user explicitly enabled.
     dom = hass.data.setdefault(DOMAIN, {})
@@ -619,5 +623,10 @@ async def _hide_disable_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> 
                             updated += 1
         _LOGGER.info("[%s] Diagnostics cleanup complete: updated=%s", DOMAIN, updated)
         done.add(entry.entry_id)
+        # Persist one-shot marker so user-enabled entities stay enabled across restarts.
+        new_opts = dict(entry.options or {})
+        if not bool(new_opts.get("_diagnostic_cleanup_done", False)):
+            new_opts["_diagnostic_cleanup_done"] = True
+            hass.config_entries.async_update_entry(entry, options=new_opts)
     except Exception:
         _LOGGER.warning("[%s] diagnostics cleanup failed for entry %s", DOMAIN, entry.entry_id, exc_info=True)

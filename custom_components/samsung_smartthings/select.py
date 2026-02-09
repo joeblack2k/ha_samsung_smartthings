@@ -252,7 +252,7 @@ class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self.device._sb_execute_supported is True
+        return super().available and self.device._sb_execute_supported is not False and len(self.options) > 0
 
     @property
     def options(self) -> list[str]:
@@ -285,7 +285,7 @@ class SoundbarEQPresetSelect(SamsungSmartThingsEntity, SelectEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self.device._sb_execute_supported is True
+        return super().available and self.device._sb_execute_supported is not False and len(self.options) > 0
 
     @property
     def options(self) -> list[str]:
