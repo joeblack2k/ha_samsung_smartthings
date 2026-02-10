@@ -14,6 +14,10 @@
 - Added guardrails in TV select entities:
   - picture/sound/input selects are unavailable when SmartThings reports TV is off.
   - clearer Home Assistant error for 409/422 command rejection.
+- Planned improvement implemented:
+  - Cloud soundbar sound modes now use model-aware fallback candidates when SmartThings returns no supported list.
+  - Fallback candidates are validated by command + execute readback, then cached.
+  - Local/LAN sound mode list is now detected via set+read validation instead of static superset.
 - Next validation steps:
   - Python syntax compile.
   - Copy integration to HA `custom_components`.

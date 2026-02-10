@@ -40,6 +40,8 @@ class AsyncSoundbarLocal:
         self._verify_ssl = verify_ssl
         self._timeout = timeout
         self._token: str | None = None
+        self._supported_sound_modes: list[str] | None = None
+        self._last_sound_mode_probe: float = 0.0
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw = json.dumps(payload, separators=(",", ":"))
@@ -120,6 +122,71 @@ class AsyncSoundbarLocal:
     async def set_sound_mode(self, mode: str) -> None:
         await self._call("soundModeControl", soundMode=mode)
 
+    @staticmethod
+    def default_sound_mode_candidates() -> list[str]:
+        """Conservative candidate list for modern Samsung soundbars."""
+        return [
+            "STANDARD",
+            "SURROUND",
+            "GAME",
+            "ADAPTIVE",
+            "DTS_VIRTUAL_X",
+            "MUSIC",
+            "CLEARVOICE",
+            "MOVIE",
+        ]
+
+    async def detect_supported_sound_modes(self, *, force: bool = False) -> list[str]:
+        """Discover supported sound modes by set+read validation.
+
+        This avoids showing modes that are not actually accepted by the device.
+        """
+        now = asyncio.get_running_loop().time()
+        if not force and self._supported_sound_modes is not None:
+            return list(self._supported_sound_modes)
+        if not force and now - self._last_sound_mode_probe < 900:
+            return list(self._supported_sound_modes or [])
+        self._last_sound_mode_probe = now
+
+        try:
+            if await self.power_state() != "powerOn":
+                return list(self._supported_sound_modes or [])
+        except Exception:
+            return list(self._supported_sound_modes or [])
+
+        current = None
+        try:
+            current = await self.sound_mode()
+        except Exception:
+            current = None
+
+        validated: list[str] = []
+        for mode in self.default_sound_mode_candidates():
+            try:
+                await self.set_sound_mode(mode)
+                await asyncio.sleep(0.35)
+                observed = await self.sound_mode()
+                if observed == mode:
+                    validated.append(mode)
+            except Exception:
+                continue
+
+        if current:
+            try:
+                await self.set_sound_mode(current)
+            except Exception:
+                pass
+            if current not in validated:
+                validated.insert(0, current)
+
+        # Keep order, remove duplicates.
+        dedup: list[str] = []
+        for mode in validated:
+            if mode not in dedup:
+                dedup.append(mode)
+        self._supported_sound_modes = dedup
+        return list(self._supported_sound_modes)
+
     # Getters
     async def volume(self) -> int:
         return int((await self._call("getVolume"))["volume"])
@@ -146,8 +213,9 @@ class AsyncSoundbarLocal:
 
     async def status(self) -> dict[str, Any]:
         """Return a consolidated status dict."""
-        return {
-            "power": await self.power_state(),
+        power = await self.power_state()
+        data = {
+            "power": power,
             "volume": await self.volume(),
             "mute": await self.is_muted(),
             "input": await self.input(),
@@ -155,4 +223,14 @@ class AsyncSoundbarLocal:
             "codec": await self.codec(),
             "identifier": await self.identifier(),
         }
-
+        # If the device is on, try to build/refresh the validated mode list (throttled).
+        if power == "powerOn":
+            try:
+                modes = await self.detect_supported_sound_modes()
+                if modes:
+                    data["supported_sound_modes"] = modes
+            except Exception:
+                pass
+        if self._supported_sound_modes:
+            data["supported_sound_modes"] = list(self._supported_sound_modes)
+        return data

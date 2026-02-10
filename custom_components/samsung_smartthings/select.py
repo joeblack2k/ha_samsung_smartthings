@@ -39,6 +39,13 @@ async def async_setup_entry(
         coordinator = domain["coordinator"]
         soundbar: AsyncSoundbarLocal = domain["soundbar"]
         host = domain.get("host") or "soundbar"
+        # Build a reliable mode list once (set+read validation).
+        try:
+            modes = await soundbar.detect_supported_sound_modes()
+            if modes:
+                coordinator.data["supported_sound_modes"] = modes
+        except Exception:
+            pass
         async_add_entities([SoundbarLocalInputSelect(coordinator, soundbar, host), SoundbarLocalSoundModeSelect(coordinator, soundbar, host)])
         return
 
@@ -286,7 +293,11 @@ class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        return [s for s in self.device._sb_soundmodes if isinstance(s, str)]
+        opts = [s for s in self.device._sb_soundmodes if isinstance(s, str)]
+        if opts:
+            return opts
+        current = self.device._sb_soundmode
+        return [current] if isinstance(current, str) and current else []
 
     @property
     def current_option(self) -> str | None:
@@ -410,14 +421,18 @@ class SoundbarLocalInputSelect(_SoundbarLocalSelect):
 
 
 class SoundbarLocalSoundModeSelect(_SoundbarLocalSelect):
-    _MODES = ["STANDARD", "SURROUND", "GAME", "MOVIE", "MUSIC", "CLEARVOICE", "DTS_VIRTUAL_X", "ADAPTIVE"]
-
     def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str) -> None:
         super().__init__(coordinator, soundbar, host, "select_sound_mode", "Sound Mode")
 
     @property
     def options(self) -> list[str]:
-        return list(self._MODES)
+        modes = self._coordinator.data.get("supported_sound_modes")
+        if isinstance(modes, list):
+            valid = [m for m in modes if isinstance(m, str) and m]
+            if valid:
+                return valid
+        current = self.current_option
+        return [current] if isinstance(current, str) and current else []
 
     @property
     def current_option(self) -> str | None:

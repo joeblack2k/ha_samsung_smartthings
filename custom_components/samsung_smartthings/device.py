@@ -61,6 +61,8 @@ class SmartThingsDevice:
         self._sb_bass_mode: int | None = None
         self._sb_voice_amplifier: int | None = None
         self._sb_execute_supported: bool | None = None
+        self._sb_soundmode_validation_done: bool = False
+        self._sb_last_soundmode_validation: float = 0.0
 
         # Throttle execute polling to avoid spamming the API.
         self._sb_last_execute_poll: float = 0.0
@@ -345,6 +347,10 @@ class SmartThingsDevice:
             if payload:
                 self._sb_soundmodes = list(payload.get("x.com.samsung.networkaudio.supportedSoundmode") or [])
                 self._sb_soundmode = payload.get("x.com.samsung.networkaudio.soundmode")
+                # Some models return an empty supported list even though commands work.
+                # Build a validated list once from model-aware candidates.
+                if not self._sb_soundmodes:
+                    await self._ensure_validated_soundmode_options()
 
             # Woofer
             payload = await self.execute_query(EXECUTE_WOOFER)
@@ -374,6 +380,85 @@ class SmartThingsDevice:
         except Exception:
             _LOGGER.debug("Execute-based features not available for %s", self.device_id)
             self._sb_execute_supported = False
+
+    def _model_code(self) -> str:
+        model = self.get_attr("ocf", "mnmo")
+        if not isinstance(model, str) or not model:
+            rt = self.runtime
+            if rt and isinstance(rt.device, dict):
+                ocf = rt.device.get("ocf")
+                if isinstance(ocf, dict) and isinstance(ocf.get("modelNumber"), str):
+                    model = ocf["modelNumber"]
+        return model.upper() if isinstance(model, str) else ""
+
+    def _fallback_soundmode_candidates(self) -> list[str]:
+        """Model-aware fallback candidates used when ST omits supportedSoundmode."""
+        model = self._model_code()
+        base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE"]
+        if model.startswith("HW-Q"):
+            return base + ["DTS_VIRTUAL_X", "MUSIC", "CLEARVOICE", "MOVIE"]
+        if model.startswith("HW-S"):
+            return base + ["MUSIC", "CLEARVOICE"]
+        if model.startswith("HW-"):
+            return base + ["MUSIC"]
+        return base
+
+    async def _ensure_validated_soundmode_options(self) -> None:
+        """Validate fallback sound modes by command+readback.
+
+        We only run this when SmartThings did not provide supported modes.
+        """
+        now = asyncio.get_running_loop().time()
+        if self._sb_soundmode_validation_done:
+            return
+        if now - self._sb_last_soundmode_validation < 21600:
+            return
+        self._sb_last_soundmode_validation = now
+
+        # Avoid mode flapping while media is active; validate when idle/on.
+        sw = self.get_attr("switch", "switch")
+        if sw not in ("on", True):
+            return
+        thing_status = self.get_attr("samsungvd.thingStatus", "status")
+        if isinstance(thing_status, str) and thing_status.lower() not in ("idle", "stopped", "ready"):
+            return
+
+        original = self._sb_soundmode if isinstance(self._sb_soundmode, str) else None
+        validated: list[str] = []
+        for mode in self._fallback_soundmode_candidates():
+            try:
+                await self.set_soundbar_soundmode(mode)
+                await asyncio.sleep(0.6)
+                payload = await self.execute_query(EXECUTE_SOUNDMODE)
+                current = payload.get("x.com.samsung.networkaudio.soundmode") if isinstance(payload, dict) else None
+                if isinstance(current, str):
+                    self._sb_soundmode = current
+                if current == mode:
+                    validated.append(mode)
+            except ClientResponseError as exc:
+                if exc.status in (400, 409, 422):
+                    continue
+                raise
+            except Exception:
+                continue
+
+        if original:
+            try:
+                await self.set_soundbar_soundmode(original)
+                self._sb_soundmode = original
+            except Exception:
+                pass
+            if original not in validated:
+                validated.insert(0, original)
+
+        # Deduplicate, keep order.
+        dedup: list[str] = []
+        for mode in validated:
+            if mode not in dedup:
+                dedup.append(mode)
+        if dedup:
+            self._sb_soundmodes = dedup
+        self._sb_soundmode_validation_done = True
 
     # -- Soundbar execute-based setters --
 

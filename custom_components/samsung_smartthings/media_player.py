@@ -198,17 +198,6 @@ class SoundbarLocalMediaPlayer(MediaPlayerEntity):
         "WIFI_IDLE",
     ]
 
-    _SOUND_MODES = [
-        "STANDARD",
-        "SURROUND",
-        "GAME",
-        "MOVIE",
-        "MUSIC",
-        "CLEARVOICE",
-        "DTS_VIRTUAL_X",
-        "ADAPTIVE",
-    ]
-
     def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str) -> None:
         self._coordinator = coordinator
         self._soundbar = soundbar
@@ -217,7 +206,7 @@ class SoundbarLocalMediaPlayer(MediaPlayerEntity):
         self._attr_name = f"Soundbar {host}"
         self._attr_device_class = MediaPlayerDeviceClass.SPEAKER
         self._attr_source_list = list(self._SOURCES)
-        self._attr_sound_mode_list = list(self._SOUND_MODES)
+        self._attr_sound_mode_list = []
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"soundbar_local_{host}")},
             manufacturer="Samsung",
@@ -261,6 +250,16 @@ class SoundbarLocalMediaPlayer(MediaPlayerEntity):
     def sound_mode(self) -> str | None:
         v = self._coordinator.data.get("sound_mode")
         return str(v) if isinstance(v, str) else None
+
+    @property
+    def sound_mode_list(self) -> list[str] | None:
+        modes = self._coordinator.data.get("supported_sound_modes")
+        if isinstance(modes, list):
+            valid = [m for m in modes if isinstance(m, str) and m]
+            if valid:
+                return valid
+        current = self.sound_mode
+        return [current] if isinstance(current, str) and current else []
 
     async def async_turn_on(self) -> None:
         await self._soundbar.power_on()
