@@ -35,6 +35,69 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
 7. Cloud mode: the integration adds a single “hub” entry and auto-discovers all Samsung devices on the account
 8. (Optional) Adjust options like polling intervals / “expose all” if you really want everything
 
+## Soundbar Support (Cloud vs LAN)
+
+This integration supports Samsung soundbars through two paths:
+
+- `SmartThings Cloud` (works for many models, broad compatibility, but API is inconsistent/rate-limited)
+- `Soundbar Local (LAN)` (best control quality, currently for 2024 Wi-Fi soundbars with IP control enabled)
+
+### Quick recommendation
+
+- Use `Soundbar Local (LAN)` whenever your model supports it and you can enable IP control.
+- Keep `SmartThings Cloud` enabled for discovery/account-level convenience and extra metadata.
+
+### Capability matrix
+
+| Feature | SmartThings Cloud | Soundbar Local (LAN) |
+|---|---|---|
+| Power on/off | Yes | Yes |
+| Volume up/down/set | Yes | Yes |
+| Mute | Yes | Yes |
+| Input source select | Often unreliable on many soundbars (model/firmware dependent) | Reliable (HDMI/eARC/etc) |
+| Next input source | Yes (`setNextInputSource`) | Yes (direct input select) |
+| Sound mode select | Yes, with fallback aliases and model candidates | Yes |
+| Adaptive mode variants | `adaptive`, `adaptive_sound`, `adaptive sound` aliases supported | Candidate includes `ADAPTIVE SOUND` |
+| Night mode | Cloud execute path (availability depends on device payload support) | Yes (local advanced call + app-style fallback) |
+| Bass boost / voice amplifier / spacefit / AVA | Cloud execute path (often no readback) | Not fully standardized locally yet |
+| Woofer/channel level controls | Cloud execute path | Subwoofer +/- buttons available |
+| Art/TV controls | Cloud only (TV capabilities) | N/A (soundbar path) |
+
+### What we expose for soundbars today
+
+#### Cloud soundbar entities
+
+- `media_player`: power/volume/mute/playback basics
+- `switch`: power
+- `number`: volume slider
+- `button`: next input source
+- `sensor`: model/firmware/status/input and selected useful attributes
+- Advanced execute entities (night/bass/voice/spacefit/woofer/speaker levels/sound mode):
+  - created as diagnostic entities
+  - hidden/disabled by default (to avoid noisy/broken controls on models that do not support readback)
+  - can be manually enabled
+
+#### Local soundbar entities
+
+- `media_player.soundbar_<ip>`: power, volume, mute, input source, sound mode
+- `switch`: power, mute
+- `select`: input source, sound mode
+- `sensor`: codec, identifier
+- Diagnostic controls (hidden/disabled by default):
+  - `switch`: Night Mode
+  - `button`: Subwoofer +, Subwoofer -
+
+### Cloud sound mode behavior (important)
+
+SmartThings frequently returns empty/null execute payloads for sound mode capabilities, even when commands are accepted.
+To keep the UI usable, this integration:
+
+- Seeds sound mode fallback candidates when payloads are empty or rate-limited
+- Supports adaptive aliases: `adaptive`, `adaptive_sound`, `adaptive sound`
+- Lets you configure custom cloud candidates in options via `cloud_soundmodes` (comma-separated)
+
+This means sound mode controls stay available even when SmartThings metadata is incomplete.
+
 ### SmartThings Cloud (Use Home Assistant SmartThings login, recommended)
 
 This is the easiest setup for normal users. No SmartThings CLI, no developer app registration, no client secret handling.
@@ -79,6 +142,7 @@ Steps:
 - `samsung_smartthings.launch_app`: custom.launchapp.launchApp wrapper (TVs)
 - `samsung_smartthings.set_art_mode`: best-effort Art/Ambient mode (Frame TVs; model/account dependent)
 - `samsung_smartthings.set_ambient_content`: samsungvd.ambientContent.setAmbientContent wrapper (advanced)
+- `samsung_smartthings.set_night_mode`: local soundbar night mode service (`entity_id` + boolean `night`)
 
 ## Notes
 
@@ -112,6 +176,13 @@ For supported 2024-line Wi-Fi soundbars, `Soundbar Local (LAN)` uses the soundba
 Requirements:
 - Soundbar connected via Wi-Fi and added to the SmartThings app
 - SmartThings app: enable **IP control** for the soundbar
+
+### Soundbar Local (LAN) advanced notes
+
+- Local mode uses HTTPS JSON-RPC on port `1516` and typically a self-signed certificate.
+- `verify_ssl` should generally remain disabled unless you installed a trusted cert on the device.
+- Night Mode is implemented with multiple local methods to handle firmware differences.
+- Some advanced Samsung options are not consistently documented across models/firmware; when in doubt use `raw_command` or local diagnostics entities.
 
 ### Frame TVs / Art Mode
 Frame TV Art/Ambient mode is highly model/account dependent in SmartThings cloud. This integration provides best-effort controls, but if you need reliable Art Mode and power state, a local TV integration is often a better fit.
