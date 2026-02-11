@@ -430,11 +430,17 @@ class SmartThingsDevice:
         self._sb_last_soundmode_validation = now
 
         # Avoid mode flapping while media is active; validate when idle/on.
+        # If the device is off/busy we still expose fallback options so the select
+        # is not empty, then defer active validation until a later poll.
         sw = self.get_attr("switch", "switch")
         if sw not in ("on", True):
+            if not self._sb_soundmodes:
+                self._sb_soundmodes = self._fallback_soundmode_candidates()
             return
         thing_status = self.get_attr("samsungvd.thingStatus", "status")
         if isinstance(thing_status, str) and thing_status.lower() not in ("idle", "stopped", "ready"):
+            if not self._sb_soundmodes:
+                self._sb_soundmodes = self._fallback_soundmode_candidates()
             return
 
         original = self._sb_soundmode if isinstance(self._sb_soundmode, str) else None

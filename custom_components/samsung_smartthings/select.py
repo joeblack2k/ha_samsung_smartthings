@@ -307,7 +307,12 @@ class SoundbarSoundModeSelect(SamsungSmartThingsEntity, SelectEntity):
         return None
 
     async def async_select_option(self, option: str) -> None:
-        await self.device.set_soundbar_soundmode(option)
+        try:
+            await self.device.set_soundbar_soundmode(option)
+        except ClientResponseError as exc:
+            if exc.status in (409, 422):
+                raise HomeAssistantError("SmartThings rejected sound mode for this device state") from exc
+            raise
         await self.coordinator.async_request_refresh()
 
 
