@@ -376,6 +376,8 @@ class SmartThingsDevice:
         except ClientResponseError as exc:
             # Don't permanently disable execute features due to transient rate-limits.
             if exc.status == 429:
+                if not self._sb_soundmodes:
+                    self._sb_soundmodes = self._fallback_soundmode_candidates()
                 return
             _LOGGER.debug("Execute-based features failed for %s (status=%s)", self.device_id, exc.status)
             self._sb_execute_supported = False
@@ -458,6 +460,11 @@ class SmartThingsDevice:
                 if current == mode:
                     validated.append(mode)
             except ClientResponseError as exc:
+                if exc.status == 429:
+                    # Keep UI usable under SmartThings rate-limits.
+                    if not self._sb_soundmodes:
+                        self._sb_soundmodes = self._fallback_soundmode_candidates()
+                    break
                 if exc.status in (400, 409, 422):
                     continue
                 raise
