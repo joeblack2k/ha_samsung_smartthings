@@ -400,7 +400,7 @@ class SmartThingsDevice:
         if self._cloud_soundmodes:
             return list(self._cloud_soundmodes)
         model = self._model_code()
-        base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE", "ADAPTIVE_SOUND"]
+        base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE", "ADAPTIVE_SOUND", "ADAPTIVE SOUND"]
         if model.startswith("HW-Q"):
             modes = base + ["DTS_VIRTUAL_X", "MUSIC", "CLEARVOICE", "MOVIE"]
         elif model.startswith("HW-S"):
@@ -423,9 +423,19 @@ class SmartThingsDevice:
         """Return mode write candidates with model/firmware aliases."""
         out: list[str] = []
         normalized = mode.strip().lower()
-        if normalized in ("adaptive", "adaptive_sound"):
-            # Some soundbars require adaptive_sound, others adaptive.
-            out.extend([mode, "adaptive_sound", "adaptive", "ADAPTIVE_SOUND", "ADAPTIVE"])
+        if normalized in ("adaptive", "adaptive_sound", "adaptive sound"):
+            # Some soundbars require adaptive sound, others adaptive/adaptive_sound.
+            out.extend(
+                [
+                    mode,
+                    "adaptive sound",
+                    "adaptive_sound",
+                    "adaptive",
+                    "ADAPTIVE SOUND",
+                    "ADAPTIVE_SOUND",
+                    "ADAPTIVE",
+                ]
+            )
         else:
             out.append(mode)
 

@@ -195,6 +195,7 @@ class AsyncSoundbarLocal:
             "SURROUND",
             "GAME",
             "ADAPTIVE",
+            "ADAPTIVE SOUND",
             "DTS_VIRTUAL_X",
             "MUSIC",
             "CLEARVOICE",
