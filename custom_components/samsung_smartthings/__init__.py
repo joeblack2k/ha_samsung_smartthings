@@ -264,6 +264,27 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         await dev.raw_command_json("main", "samsungvd.ambientContent", "setAmbientContent", data_json)
         await coordinator.async_request_refresh()
 
+    async def _set_night_mode(call) -> None:
+        entity_id = call.data.get("entity_id")
+        night = bool(call.data.get("night", True))
+        if not isinstance(entity_id, str) or not entity_id:
+            raise ValueError("entity_id is required")
+
+        from homeassistant.helpers import entity_registry as er
+
+        ent = er.async_get(hass).async_get(entity_id)
+        if not ent or not ent.config_entry_id:
+            raise ValueError(f"Entity not found: {entity_id}")
+
+        dom = hass.data.get(DOMAIN, {}).get(ent.config_entry_id)
+        if not dom or dom.get("type") != ENTRY_TYPE_SOUNDBAR_LOCAL:
+            raise ValueError("set_night_mode service only supports local soundbar entries")
+
+        soundbar: AsyncSoundbarLocal = dom["soundbar"]
+        coordinator = dom["coordinator"]
+        await soundbar.set_night_mode(night)
+        await coordinator.async_request_refresh()
+
     if not hass.services.has_service(DOMAIN, "raw_command"):
         hass.services.async_register(DOMAIN, "raw_command", _raw_command)
     if not hass.services.has_service(DOMAIN, "play_track"):
@@ -278,6 +299,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         hass.services.async_register(DOMAIN, "set_art_mode", _set_art_mode)
     if not hass.services.has_service(DOMAIN, "set_ambient_content"):
         hass.services.async_register(DOMAIN, "set_ambient_content", _set_ambient_content)
+    if not hass.services.has_service(DOMAIN, "set_night_mode"):
+        hass.services.async_register(DOMAIN, "set_night_mode", _set_night_mode)
 
     return True
 

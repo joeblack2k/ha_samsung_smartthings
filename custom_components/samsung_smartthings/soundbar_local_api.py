@@ -42,6 +42,7 @@ class AsyncSoundbarLocal:
         self._token: str | None = None
         self._supported_sound_modes: list[str] | None = None
         self._last_sound_mode_probe: float = 0.0
+        self._night_mode: bool | None = None
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw = json.dumps(payload, separators=(",", ":"))
@@ -69,6 +70,29 @@ class AsyncSoundbarLocal:
         if not isinstance(res, dict):
             raise SoundbarLocalError(f"Unexpected result: {res!r}")
         return res
+
+    async def _post_any(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST payload and return raw JSON object (for non-JSON-RPC variants)."""
+        raw = json.dumps(payload, separators=(",", ":"))
+        try:
+            async with async_timeout.timeout(self._timeout):
+                resp = await self._session.post(
+                    self._url,
+                    data=raw,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    ssl=self._verify_ssl,
+                )
+            resp.raise_for_status()
+            data = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise SoundbarLocalError(str(err)) from err
+
+        if isinstance(data, dict):
+            return data
+        raise SoundbarLocalError(f"Unexpected response: {data!r}")
 
     async def _call(self, method: str, **params: Any) -> dict[str, Any]:
         if method != "createAccessToken":
@@ -121,6 +145,41 @@ class AsyncSoundbarLocal:
 
     async def set_sound_mode(self, mode: str) -> None:
         await self._call("soundModeControl", soundMode=mode)
+
+    async def set_advanced_sound_settings(self, settings: dict[str, Any]) -> None:
+        """Best-effort advanced settings call exposed by some firmware."""
+        await self._call("setAdvancedSoundSettings", **settings)
+
+    async def set_night_mode(self, enabled: bool) -> None:
+        """Set night mode via available local methods.
+
+        Firmware varies by model; we try both known patterns.
+        """
+        target = "on" if enabled else "off"
+        # Pattern 1: explicit local method.
+        try:
+            await self.set_advanced_sound_settings({"nightMode": target})
+            self._night_mode = enabled
+            return
+        except Exception:
+            pass
+
+        # Pattern 2: app-style event payload.
+        payload = {
+            "method": "ms.channel.emit",
+            "params": {
+                "event": "ed.installedApp.event",
+                "to": "host",
+                "data": {
+                    "component": "audio",
+                    "capability": "custom1",
+                    "command": "setNightMode",
+                    "arguments": [target],
+                },
+            },
+        }
+        await self._post_any(payload)
+        self._night_mode = enabled
 
     @staticmethod
     def default_sound_mode_candidates() -> list[str]:
@@ -233,4 +292,6 @@ class AsyncSoundbarLocal:
                 pass
         if self._supported_sound_modes:
             data["supported_sound_modes"] = list(self._supported_sound_modes)
+        if self._night_mode is not None:
+            data["night_mode"] = self._night_mode
         return data

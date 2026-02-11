@@ -173,3 +173,20 @@ set_ambient_content:
       required: true
       selector:
         text: {}
+
+set_night_mode:
+  name: Set night mode (local soundbar)
+  description: Enable or disable Night Mode on Samsung local soundbar entries.
+  fields:
+    entity_id:
+      name: Entity ID
+      description: Local soundbar entity from this integration (for example media_player.soundbar_192_168_2_165).
+      required: true
+      selector:
+        entity: {}
+    night:
+      name: Night mode
+      description: true to enable, false to disable.
+      required: true
+      selector:
+        boolean: {}

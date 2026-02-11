@@ -24,7 +24,13 @@ async def async_setup_entry(
         coordinator = domain["coordinator"]
         soundbar: AsyncSoundbarLocal = domain["soundbar"]
         host = domain.get("host") or "soundbar"
-        async_add_entities([SoundbarLocalPowerSwitch(coordinator, soundbar, host), SoundbarLocalMuteSwitch(coordinator, soundbar, host)])
+        async_add_entities(
+            [
+                SoundbarLocalPowerSwitch(coordinator, soundbar, host),
+                SoundbarLocalMuteSwitch(coordinator, soundbar, host),
+                SoundbarLocalNightModeSwitch(coordinator, soundbar, host),
+            ]
+        )
         return
 
     entities: list[SwitchEntity] = []
@@ -255,4 +261,28 @@ class SoundbarLocalMuteSwitch(_SoundbarLocalSwitch):
     async def async_turn_off(self, **kwargs) -> None:
         if self.is_on is not False:
             await self._soundbar.mute_toggle()
+        await self._coordinator.async_request_refresh()
+
+
+class SoundbarLocalNightModeSwitch(_SoundbarLocalSwitch):
+    def __init__(self, coordinator, soundbar: AsyncSoundbarLocal, host: str) -> None:
+        super().__init__(coordinator, soundbar, host, "switch_night_mode", "Night Mode")
+        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_visible_default = False
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:weather-night"
+
+    @property
+    def is_on(self) -> bool | None:
+        v = self._coordinator.data.get("night_mode")
+        if isinstance(v, bool):
+            return v
+        return None
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._soundbar.set_night_mode(True)
+        await self._coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._soundbar.set_night_mode(False)
         await self._coordinator.async_request_refresh()
