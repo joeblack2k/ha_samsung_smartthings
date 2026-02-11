@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from aiohttp import ClientResponseError
 
-from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_SOUNDBAR_LOCAL
+from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_FRAME_LOCAL, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .frame_local_api import AsyncFrameLocal, FrameLocalError, FrameLocalUnsupportedError
 from .soundbar_local_api import AsyncSoundbarLocal
 
 
@@ -20,6 +22,17 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_FRAME_LOCAL or domain.get("type") == ENTRY_TYPE_FRAME_LOCAL:
+        coordinator = domain["coordinator"]
+        frame: AsyncFrameLocal = domain["frame"]
+        host = domain.get("host") or "frame"
+        async_add_entities(
+            [
+                FrameLocalArtModeSwitch(coordinator, frame, host),
+                FrameLocalBrightnessSensorSwitch(coordinator, frame, host),
+            ]
+        )
+        return
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL:
         coordinator = domain["coordinator"]
         soundbar: AsyncSoundbarLocal = domain["soundbar"]
@@ -285,4 +298,112 @@ class SoundbarLocalNightModeSwitch(_SoundbarLocalSwitch):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self._soundbar.set_night_mode(False)
+        await self._coordinator.async_request_refresh()
+
+
+class _FrameLocalSwitch(SwitchEntity):
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str, key: str, name: str) -> None:
+        self._coordinator = coordinator
+        self._frame = frame
+        self._host = host
+        self._attr_unique_id = f"frame_local_{host}_{key}"
+        self._attr_name = name
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"frame_local_{host}")},
+            manufacturer="Samsung",
+            model="The Frame (Local)",
+            name=f"Frame TV {host}",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.last_update_success and bool(self._coordinator.data.get("online", False))
+
+
+class FrameLocalArtModeSwitch(_FrameLocalSwitch):
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "art_mode", "Art Mode")
+        self._attr_icon = "mdi:image-frame"
+
+    @property
+    def is_on(self) -> bool | None:
+        v = self._coordinator.data.get("art_mode")
+        if isinstance(v, str):
+            return v.lower() == "on"
+        return None
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        supported = self._coordinator.data.get("supports_art_mode")
+        return supported is not False
+
+    async def async_turn_on(self, **kwargs) -> None:
+        try:
+            await self._frame.set_art_mode(True)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Art mode control is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to turn art mode on: {err}") from err
+        await self._coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        try:
+            await self._frame.set_art_mode(False)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Art mode control is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to turn art mode off: {err}") from err
+        await self._coordinator.async_request_refresh()
+
+
+class FrameLocalBrightnessSensorSwitch(_FrameLocalSwitch):
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "brightness_sensor", "Brightness Sensor")
+        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_visible_default = False
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:brightness-6"
+
+    @property
+    def is_on(self) -> bool | None:
+        payload = self._coordinator.data.get("current_artwork_payload")
+        if isinstance(payload, dict):
+            raw = payload.get("brightness_sensor_setting")
+            if isinstance(raw, str):
+                if raw.lower() == "on":
+                    return True
+                if raw.lower() == "off":
+                    return False
+        return None
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        supported = self._coordinator.data.get("supports_brightness_sensor")
+        return supported is not False
+
+    async def async_turn_on(self, **kwargs) -> None:
+        try:
+            await self._frame.set_brightness_sensor(True)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Brightness sensor toggle is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to enable brightness sensor: {err}") from err
+        await self._coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        try:
+            await self._frame.set_brightness_sensor(False)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Brightness sensor toggle is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to disable brightness sensor: {err}") from err
         await self._coordinator.async_request_refresh()

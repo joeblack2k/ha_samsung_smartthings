@@ -190,3 +190,337 @@ set_night_mode:
       required: true
       selector:
         boolean: {}
+
+frame_upload_artwork:
+  name: Frame upload artwork
+  description: Upload local image file to The Frame (local LAN mode). Optionally show immediately.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      description: Any entity from the target Frame local entry.
+      required: true
+      selector:
+        entity: {}
+    path:
+      name: Local file path
+      required: true
+      selector:
+        text: {}
+    matte:
+      name: Matte id
+      required: false
+      default: shadowbox_polar
+      selector:
+        text: {}
+    portrait_matte:
+      name: Portrait matte id
+      required: false
+      selector:
+        text: {}
+    show_now:
+      name: Show now
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    use_border:
+      name: Use border
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    matte_id:
+      name: Matte override
+      description: Optional border id. Leave empty for automatic choice.
+      required: false
+      selector:
+        text: {}
+
+frame_select_artwork:
+  name: Frame select artwork
+  description: Show an existing artwork by content_id on The Frame (local LAN mode).
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    content_id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+    show_now:
+      name: Show now
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    use_border:
+      name: Use border
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    matte_id:
+      name: Matte override
+      description: Optional border id. Leave empty for automatic choice.
+      required: false
+      selector:
+        text: {}
+
+frame_set_local_file:
+  name: Frame set local file
+  description: Upload and show one local file (absolute path or relative to FrameTV folder) on The Frame.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    path:
+      name: File path
+      description: Absolute path or relative path inside the FrameTV folder.
+      required: true
+      selector:
+        text: {}
+    show_now:
+      name: Show now
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    use_border:
+      name: Use border
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    matte_id:
+      name: Matte override
+      description: Optional border id. Leave empty for automatic choice.
+      required: false
+      selector:
+        text: {}
+
+frame_set_internet_artwork:
+  name: Frame set internet artwork
+  description: Download, upload and show internet artwork from a collection, optionally random.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    collection:
+      name: Collection
+      description: museums, nature, architecture
+      required: false
+      default: museums
+      selector:
+        select:
+          options:
+            - museums
+            - nature
+            - architecture
+    random:
+      name: Random pick
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    index:
+      name: Index
+      description: Used when random is false (1..24).
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 24
+          mode: slider
+    use_border:
+      name: Use border
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    matte_id:
+      name: Matte override
+      description: Optional border id. Leave empty for automatic choice.
+      required: false
+      selector:
+        text: {}
+
+frame_set_favorite_artwork:
+  name: Frame set favorite artwork
+  description: Set artwork from FrameTV favorites. Use favorite_id or pick random favorite.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    favorite_id:
+      name: Favorite ID
+      description: Optional id from FrameTV favorites. Leave empty with random=true to pick random favorite.
+      required: false
+      selector:
+        text: {}
+    favorite_title:
+      name: Favorite title
+      description: Optional exact title match from favorites (easier than favorite_id).
+      required: false
+      selector:
+        text: {}
+    random:
+      name: Random favorite
+      required: false
+      default: false
+      selector:
+        boolean: {}
+    use_border:
+      name: Use border
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    matte_id:
+      name: Matte override
+      description: Optional border id. Leave empty for automatic choice.
+      required: false
+      selector:
+        text: {}
+
+frame_delete_artwork:
+  name: Frame delete artwork
+  description: Delete one artwork by content_id from The Frame (local LAN mode).
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    content_id:
+      name: Content ID
+      required: true
+      selector:
+        text: {}
+
+frame_delete_artwork_list:
+  name: Frame delete artwork list
+  description: Delete multiple artworks by content_id from The Frame (local LAN mode).
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    content_ids:
+      name: Content IDs
+      description: List or comma separated content IDs.
+      required: true
+      selector:
+        text: {}
+
+frame_sync_folder:
+  name: Frame sync folder
+  description: Sync a local folder of image files to The Frame with dedup based on hash+mtime.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    folder:
+      name: Folder path
+      required: true
+      selector:
+        text: {}
+    recursive:
+      name: Recursive
+      required: false
+      default: false
+      selector:
+        boolean: {}
+    delete_orphans:
+      name: Delete orphans
+      description: Delete previously synced items that are no longer present in folder.
+      required: false
+      default: false
+      selector:
+        boolean: {}
+
+frame_set_slideshow:
+  name: Frame set slideshow
+  description: Configure slideshow duration and shuffle mode on The Frame.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    minutes:
+      name: Minutes
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 240
+          mode: slider
+    shuffled:
+      name: Shuffled
+      required: false
+      default: true
+      selector:
+        boolean: {}
+    category_id:
+      name: Category ID
+      required: false
+      selector:
+        text: {}
+
+frame_set_motion_timer:
+  name: Frame set motion timer
+  description: Set Frame motion timer (off, 5, 15, 30, 60, 120, 240).
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    value:
+      name: Timer value
+      required: true
+      selector:
+        text: {}
+
+frame_set_motion_sensitivity:
+  name: Frame set motion sensitivity
+  description: Set Frame motion sensitivity (1-3).
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    value:
+      name: Sensitivity
+      required: true
+      selector:
+        text: {}
+
+frame_set_brightness_sensor:
+  name: Frame set brightness sensor
+  description: Enable/disable Frame brightness sensor.
+  fields:
+    frame_entity_id:
+      name: Frame entity
+      required: true
+      selector:
+        entity: {}
+    enabled:
+      name: Enabled
+      required: true
+      selector:
+        boolean: {}

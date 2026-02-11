@@ -1,11 +1,27 @@
-# Samsung SmartThings (Cloud) for Home Assistant
+# Samsung SmartThings (Cloud + Local) for Home Assistant
 
 Samsung soundbars and TVs (including The Frame) via the SmartThings cloud API.
+This project now combines cloud control with local LAN control paths for deeper reliability and feature coverage.
+
+![Integration Logo](custom_components/samsung_smartthings/logo.png)
 
 This integration is built for maximum coverage, but with sane defaults (no entity spam, avoid SmartThings rate limits):
 - Adds “nice” entities for common Samsung TV / soundbar controls (picture mode, sound mode, input source, remote keys, etc.)
 - Adds a universal `raw_command` service for anything new/unknown
 - Optionally exposes lots of raw SmartThings attributes/controls (disabled/hidden by default)
+
+## Full Documentation Wiki
+
+For complete documentation (user + developer), see the wiki pages in this repository:
+
+- [Wiki Home](wiki/Home.md)
+- [Quick Start & Login Flows](wiki/Quick-Start-and-Login-Flows.md)
+- [Compatibility Matrix](wiki/Compatibility-Matrix.md)
+- [Frame TV Deep Dive](wiki/FrameTV-Deep-Dive.md)
+- [Soundbar Deep Dive](wiki/Soundbar-Deep-Dive.md)
+- [Automation Recipes](wiki/Automation-Recipes.md)
+- [Developer Reference](wiki/Developer-Reference.md)
+- [Credits & References](wiki/Credits-and-References.md)
 
 ## Install (HACS)
 
@@ -29,6 +45,7 @@ Copy `custom_components/samsung_smartthings` into your Home Assistant `custom_co
    - `SmartThings Cloud (OAuth2, bring your own app)` (developer/advanced)
    - `SmartThings Cloud (PAT token)` (temporary; SmartThings PATs may expire in 24h)
    - `Soundbar Local (LAN)` (optional, for supported 2024 Wi-Fi soundbars)
+   - `Frame TV Local (LAN, Art API)` (recommended for reliable Frame Art functions)
 4. Home Assistant SmartThings login: this reuses the built-in Home Assistant `SmartThings` integration's OAuth login. If you don't have it yet, add the built-in SmartThings integration first (it will open SmartThings in your browser and return to HA).
 5. OAuth2 (bring your own app): create Application Credentials for SmartThings (client id/secret + redirect URL), then complete the login flow
 6. PAT: paste a SmartThings Personal Access Token
@@ -46,6 +63,58 @@ This integration supports Samsung soundbars through two paths:
 
 - Use `Soundbar Local (LAN)` whenever your model supports it and you can enable IP control.
 - Keep `SmartThings Cloud` enabled for discovery/account-level convenience and extra metadata.
+
+## TV App Launch (Cloud + Frame Local)
+
+This integration now exposes app launch controls in multiple ways:
+
+- `select.<tv>_app` dropdown (readable app names + app IDs)
+- `media_player.play_media` with:
+  - `media_content_type: "app"` and `media_content_id: "app:<app_id>"` (or known app label)
+  - `media_content_type: "url"` and YouTube URL (best effort per path)
+- `samsung_smartthings.launch_app` service (direct control)
+
+Supported common app IDs include: YouTube, Netflix, Disney+, Prime Video, Apple TV, Spotify, Plex, Web Browser.
+
+### Cloud TV behavior
+
+- App launch works via SmartThings `custom.launchapp`.
+- YouTube URL via `play_media` opens YouTube app (deep-link not guaranteed by SmartThings).
+- Arbitrary web URL deep-link is not reliably supported by SmartThings cloud.
+
+### Frame Local behavior
+
+- App launch uses local websocket (`run_app`) directly on the TV.
+- `play_media` with YouTube URL uses app deep-link.
+- `play_media` with other URLs opens TV browser (`org.tizen.browser`).
+
+## Frame TV Support (Cloud vs Local)
+
+For The Frame, this integration now supports two paths:
+
+- `SmartThings Cloud` (easy auth reuse, broad model discovery, but command reliability depends on SmartThings)
+- `Frame TV Local (LAN, Art API)` (direct websocket API on TV; best for Art Mode and artwork lifecycle)
+
+### Frame feature matrix
+
+| Feature | SmartThings Cloud | Frame TV Local (LAN) |
+|---|---|---|
+| TV discovery and account-level onboarding | Yes | No (per-IP local entry) |
+| Art Mode switch | Best-effort, model/account dependent | Yes |
+| Current artwork id | Limited/inconsistent | Yes |
+| Artwork list | No | Yes |
+| Upload artwork | No | Yes |
+| Delete artwork | No | Yes |
+| Matte / photo filter | No | Yes (if TV firmware exposes options) |
+| Slideshow / motion / brightness sensor settings | No | Yes (advanced services) |
+
+### Frame Local setup
+
+1. Add integration -> choose `Frame TV Local (LAN, Art API)`
+2. Enter Frame IP
+3. Keep websocket port `8002` unless your network requires `8001`
+4. First connection triggers a permission popup on TV, accept it
+5. Token is stored in Home Assistant `.storage` and reused automatically
 
 ### Capability matrix
 
@@ -143,6 +212,71 @@ Steps:
 - `samsung_smartthings.set_art_mode`: best-effort Art/Ambient mode (Frame TVs; model/account dependent)
 - `samsung_smartthings.set_ambient_content`: samsungvd.ambientContent.setAmbientContent wrapper (advanced)
 - `samsung_smartthings.set_night_mode`: local soundbar night mode service (`entity_id` + boolean `night`)
+- `samsung_smartthings.frame_upload_artwork`: upload local image and optionally show now (Frame Local)
+- `samsung_smartthings.frame_select_artwork`: select existing artwork by `content_id` (Frame Local)
+- `samsung_smartthings.frame_delete_artwork`: delete one artwork by `content_id` (Frame Local)
+- `samsung_smartthings.frame_delete_artwork_list`: delete multiple artworks by `content_ids` (Frame Local)
+- `samsung_smartthings.frame_sync_folder`: folder sync with hash/mtime dedup + optional orphan cleanup (Frame Local)
+- `samsung_smartthings.frame_set_slideshow`: configure slideshow duration/shuffle (Frame Local)
+- `samsung_smartthings.frame_set_motion_timer`: set motion timer (Frame Local)
+- `samsung_smartthings.frame_set_motion_sensitivity`: set motion sensitivity (Frame Local)
+- `samsung_smartthings.frame_set_brightness_sensor`: enable/disable brightness sensor (Frame Local)
+- `samsung_smartthings.frame_set_local_file`: upload/show one local file (absolute or relative to `FrameTV` folder)
+- `samsung_smartthings.frame_set_internet_artwork`: set artwork from internet collection (`museums|nature|architecture`), random or fixed index
+- `samsung_smartthings.frame_set_favorite_artwork`: set artwork from favorites by id or random favorite
+
+## Automation Examples (TV App Launch)
+
+### Launch YouTube app by app id
+
+```yaml
+alias: Frame TV - Launch YouTube app
+trigger:
+  - platform: state
+    entity_id: input_boolean.start_video
+    to: "on"
+action:
+  - service: media_player.play_media
+    target:
+      entity_id: media_player.samsung_the_frame_65_media
+    data:
+      media_content_id: "app:111299001912"
+      media_content_type: "app"
+```
+
+### Open specific YouTube video URL
+
+```yaml
+alias: Frame TV - Open YouTube URL
+trigger:
+  - platform: state
+    entity_id: input_boolean.start_video
+    to: "on"
+action:
+  - service: media_player.play_media
+    target:
+      entity_id: media_player.frame_tv_192_168_2_172_art_browser
+    data:
+      media_content_id: "https://www.youtube.com/watch?v=MNkDPfjr0E8"
+      media_content_type: "url"
+```
+
+### Open YouTube playlist URL
+
+```yaml
+alias: Frame TV - Open YouTube playlist
+trigger:
+  - platform: state
+    entity_id: input_boolean.start_playlist
+    to: "on"
+action:
+  - service: media_player.play_media
+    target:
+      entity_id: media_player.frame_tv_192_168_2_172_art_browser
+    data:
+      media_content_id: "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxx"
+      media_content_type: "url"
+```
 
 ## Notes
 
@@ -185,4 +319,46 @@ Requirements:
 - Some advanced Samsung options are not consistently documented across models/firmware; when in doubt use `raw_command` or local diagnostics entities.
 
 ### Frame TVs / Art Mode
-Frame TV Art/Ambient mode is highly model/account dependent in SmartThings cloud. This integration provides best-effort controls, but if you need reliable Art Mode and power state, a local TV integration is often a better fit.
+Frame TV Art/Ambient mode is highly model/account dependent in SmartThings cloud.  
+For reliable Art control use `Frame TV Local (LAN, Art API)` in this integration.
+
+## Automation Examples (Frame Local)
+
+### 1) First day of month: random museum/nature/architecture artwork
+
+```yaml
+alias: FrameTV monthly random internet artwork
+trigger:
+  - platform: time
+    at: "09:00:00"
+condition:
+  - condition: template
+    value_template: "{{ now().day == 1 }}"
+action:
+  - service: samsung_smartthings.frame_set_internet_artwork
+    data:
+      frame_entity_id: media_player.frame_tv_192_168_2_172_art_browser
+      collection: museums   # or nature / architecture
+      random: true
+      use_border: true
+mode: single
+```
+
+### 2) First day of month: fixed local file from FrameTV folder
+
+```yaml
+alias: FrameTV monthly fixed local artwork
+trigger:
+  - platform: time
+    at: "09:00:00"
+condition:
+  - condition: template
+    value_template: "{{ now().day == 1 }}"
+action:
+  - service: samsung_smartthings.frame_set_local_file
+    data:
+      frame_entity_id: media_player.frame_tv_192_168_2_172_art_browser
+      path: foto.jpg        # relative to /config/FrameTV
+      use_border: false
+mode: single
+```

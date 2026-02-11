@@ -10,8 +10,10 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_SOUNDBAR_LOCAL
+from .const import ENTRY_TYPE_FRAME_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .frame_local_api import AsyncFrameLocal
 from .naming import attribute_label, capability_label, humanize_token
 
 
@@ -30,6 +32,31 @@ async def async_setup_entry(
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = []
+
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_FRAME_LOCAL or domain.get("type") == ENTRY_TYPE_FRAME_LOCAL:
+        coordinator = domain["coordinator"]
+        frame: AsyncFrameLocal = domain["frame"]
+        host = domain.get("host") or "frame"
+        entities.extend(
+            [
+                FrameLocalSimpleSensor(coordinator, frame, host, "api_version", "Art API Version", "api_version"),
+                FrameLocalSimpleSensor(coordinator, frame, host, "current_artwork", "Current Artwork", "current_artwork_id"),
+                FrameLocalSimpleSensor(coordinator, frame, host, "art_count", "Artwork Count", "art_count"),
+                FrameLocalSimpleSensor(
+                    coordinator,
+                    frame,
+                    host,
+                    "last_errors",
+                    "Last Errors",
+                    "last_errors",
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    enabled_default=False,
+                    visible_default=False,
+                ),
+            ]
+        )
+        async_add_entities(entities, True)
+        return
 
     # Local soundbar entry: small set of useful read-only sensors.
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL:
@@ -223,3 +250,60 @@ class SoundbarLocalSimpleSensor(SensorEntity):
     @property
     def native_value(self) -> Any:
         return self._coordinator.data.get(self._data_key)
+
+
+class FrameLocalSimpleSensor(SensorEntity):
+    """Simple sensor backed by local Frame coordinator data."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator,
+        frame: AsyncFrameLocal,
+        host: str,
+        key: str,
+        name: str,
+        data_key: str,
+        *,
+        entity_category: EntityCategory | None = None,
+        enabled_default: bool = True,
+        visible_default: bool = True,
+    ) -> None:
+        self._coordinator = coordinator
+        self._frame = frame
+        self._data_key = data_key
+        self._attr_unique_id = f"frame_local_{host}_{key}"
+        self._attr_name = name
+        self._attr_entity_category = entity_category
+        self._attr_entity_registry_enabled_default = enabled_default
+        self._attr_entity_registry_visible_default = visible_default
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"frame_local_{host}")},
+            manufacturer="Samsung",
+            model="The Frame (Local)",
+            name=f"Frame TV {host}",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.last_update_success and bool(self._coordinator.data.get("online", False))
+
+    @property
+    def native_value(self) -> Any:
+        value = self._coordinator.data.get(self._data_key)
+        if isinstance(value, list):
+            return f"list({len(value)})"
+        if isinstance(value, dict):
+            return f"dict({len(value)})"
+        return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        value = self._coordinator.data.get(self._data_key)
+        if isinstance(value, (list, dict)):
+            return {"value": value}
+        return None

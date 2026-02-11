@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import hashlib
 import logging
 from typing import Any
@@ -22,6 +23,7 @@ from .const import (
     CONF_SMARTTHINGS_ENTRY_ID,
     CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
+    CONF_WS_NAME,
     DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_CLOUD_SOUNDMODES,
     DEFAULT_EXPOSE_ALL,
@@ -30,9 +32,12 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ENTRY_TYPE_CLOUD,
+    ENTRY_TYPE_FRAME_LOCAL,
     ENTRY_TYPE_SOUNDBAR_LOCAL,
+    DEFAULT_FRAME_WS_NAME,
 )
 from .smartthings_api import SmartThingsApi
+from .frame_local_api import AsyncFrameLocal
 
 _LOGGER = logging.getLogger(__name__)
 OAUTH2_TOKEN_KEY = getattr(config_entry_oauth2_flow, "CONF_TOKEN", "token")
@@ -51,6 +56,33 @@ async def _validate_token(hass, token: str) -> dict[str, Any]:
     api = SmartThingsApi(hass, pat_token=token, lock_key=_token_key(token))
     devices = await api.list_devices()
     return {"devices": devices}
+
+
+async def _validate_frame_local_connection(
+    hass,
+    *,
+    host: str,
+    ws_name: str,
+) -> bool:
+    """Best-effort preflight for Frame Local setup.
+
+    We require at least one successful local Art API call before creating
+    the config entry, so typo'd or unreachable hosts don't get saved.
+    """
+    token_file = str(tempfile.gettempdir() + f"/samsung_smartthings_probe_{host.replace(':', '_')}.token")
+    frame = AsyncFrameLocal(
+        hass,
+        host=host,
+        ws_port=8002,
+        timeout=10,
+        ws_name=ws_name,
+        token_file=token_file,
+    )
+    try:
+        api_version = await frame.get_api_version()
+        return bool(api_version)
+    except Exception:
+        return False
 
 
 class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
@@ -72,6 +104,8 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             t = user_input.get(CONF_ENTRY_TYPE)
             if t == ENTRY_TYPE_SOUNDBAR_LOCAL:
                 return await self.async_step_soundbar_local()
+            if t == ENTRY_TYPE_FRAME_LOCAL:
+                return await self.async_step_frame_local()
             if t == CLOUD_SETUP_HA_SMARTTHINGS:
                 return await self.async_step_cloud_ha_smartthings()
             if t == CLOUD_SETUP_OAUTH_APP_CREDENTIALS:
@@ -88,6 +122,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
                             CLOUD_SETUP_OAUTH_APP_CREDENTIALS: "SmartThings Cloud (OAuth2, bring your own app)",
                             ENTRY_TYPE_CLOUD: "SmartThings Cloud (PAT token)",
                             ENTRY_TYPE_SOUNDBAR_LOCAL: "Soundbar Local (LAN)",
+                            ENTRY_TYPE_FRAME_LOCAL: "Frame TV Local (LAN, Art API)",
                         }
                     )
                 }
@@ -216,6 +251,45 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
                 {
                     vol.Required(CONF_HOST): str,
                     vol.Optional(CONF_VERIFY_SSL, default=False): bool,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_frame_local(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = str(user_input.get(CONF_HOST, "") or "").strip()
+            ws_name = str(user_input.get(CONF_WS_NAME, DEFAULT_FRAME_WS_NAME) or "").strip() or DEFAULT_FRAME_WS_NAME
+            if not host:
+                errors["base"] = "cannot_connect"
+            else:
+                try:
+                    ok = await _validate_frame_local_connection(self.hass, host=host, ws_name=ws_name)
+                except Exception:
+                    _LOGGER.debug("Frame local validation failed for host=%s", host, exc_info=True)
+                    ok = False
+
+                if not ok:
+                    errors["base"] = "cannot_connect"
+                else:
+                    await self.async_set_unique_id(f"frame_local_{host}")
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title=f"Frame TV {host}",
+                        data={
+                            CONF_ENTRY_TYPE: ENTRY_TYPE_FRAME_LOCAL,
+                            CONF_HOST_LOCAL: host,
+                            CONF_WS_NAME: ws_name,
+                        },
+                    )
+
+        return self.async_show_form(
+            step_id="frame_local",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST): str,
+                    vol.Optional(CONF_WS_NAME, default=DEFAULT_FRAME_WS_NAME): str,
                 }
             ),
             errors=errors,

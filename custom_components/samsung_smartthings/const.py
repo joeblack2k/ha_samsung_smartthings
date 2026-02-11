@@ -10,10 +10,14 @@ CONF_SMARTTHINGS_ENTRY_ID = "smartthings_entry_id"
 CONF_ENTRY_TYPE = "entry_type"
 ENTRY_TYPE_CLOUD = "cloud"
 ENTRY_TYPE_SOUNDBAR_LOCAL = "soundbar_local"
+ENTRY_TYPE_FRAME_LOCAL = "frame_local"
 
 # Local soundbar (LAN) keys
 CONF_HOST = "host"
 CONF_VERIFY_SSL = "verify_ssl"
+CONF_WS_PORT = "ws_port"
+CONF_WS_NAME = "ws_name"
+CONF_TIMEOUT = "timeout"
 
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_IDS = "device_ids"
@@ -41,6 +45,10 @@ DEFAULT_CLOUD_SOUNDMODES = ""
 
 # Local soundbar poll interval: LAN is fast, but don't spam.
 DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL = 10  # seconds
+DEFAULT_LOCAL_FRAME_POLL_INTERVAL = 20  # seconds
+DEFAULT_FRAME_WS_PORT = 8002
+DEFAULT_FRAME_WS_NAME = "Home Assistant"
+DEFAULT_FRAME_TIMEOUT = 10
 
 # Platforms we create dynamically based on capabilities.
 PLATFORMS: list[str] = [

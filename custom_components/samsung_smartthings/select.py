@@ -11,10 +11,12 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENTRY_TYPE, DOMAIN, RearSpeakerMode, ENTRY_TYPE_SOUNDBAR_LOCAL
+from .const import CONF_ENTRY_TYPE, DOMAIN, RearSpeakerMode, ENTRY_TYPE_FRAME_LOCAL, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
+from .frame_local_api import AsyncFrameLocal, FrameLocalError, FrameLocalUnsupportedError
 from .soundbar_local_api import AsyncSoundbarLocal
+from .app_catalog import app_options, resolve_app
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,6 +37,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_FRAME_LOCAL or domain.get("type") == ENTRY_TYPE_FRAME_LOCAL:
+        coordinator = domain["coordinator"]
+        frame: AsyncFrameLocal = domain["frame"]
+        host = domain.get("host") or "frame"
+        async_add_entities(
+            [
+                FrameLocalAppSelect(coordinator, frame, host),
+                FrameLocalArtworkSelect(coordinator, frame, host),
+                FrameLocalMatteSelect(coordinator, frame, host),
+                FrameLocalPhotoFilterSelect(coordinator, frame, host),
+            ]
+        )
+        return
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_SOUNDBAR_LOCAL or domain.get("type") == ENTRY_TYPE_SOUNDBAR_LOCAL:
         coordinator = domain["coordinator"]
         soundbar: AsyncSoundbarLocal = domain["soundbar"]
@@ -70,6 +85,8 @@ async def async_setup_entry(
         # TV input source (Samsung map)
         if dev.has_capability("samsungvd.mediaInputSource"):
             entities.append(SamsungSmartThingsSelect(coordinator, _samsung_input_source_desc()))
+        if dev.has_capability("custom.launchapp"):
+            entities.append(SamsungTVAppSelect(coordinator))
 
         # Soundbar audio input source (cycle-based)
         # SmartThings cloud frequently fails to set inputs on many soundbars even if it can
@@ -238,6 +255,42 @@ class SamsungSmartThingsSelect(SamsungSmartThingsEntity, SelectEntity):
         except ClientResponseError as exc:
             if exc.status in (409, 422):
                 raise HomeAssistantError(f"SmartThings rejected {self.desc.name} for this device state") from exc
+            raise
+        await self.coordinator.async_request_refresh()
+
+
+class SamsungTVAppSelect(SamsungSmartThingsEntity, SelectEntity):
+    """App launcher select for Samsung TVs via SmartThings cloud."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: SmartThingsCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{self.device.device_id}_select_tv_app"
+        self._attr_name = "App"
+        self._attr_options = app_options()
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.device.has_capability("custom.launchapp")
+
+    @property
+    def current_option(self) -> str | None:
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        app = resolve_app(option)
+        if app is None:
+            raise HomeAssistantError(f"Unknown app option: {option}")
+        try:
+            await self.device.send_command(
+                "custom.launchapp",
+                "launchApp",
+                arguments=[app.app_id, app.name],
+            )
+        except ClientResponseError as exc:
+            if exc.status in (409, 422):
+                raise HomeAssistantError("SmartThings rejected app launch for this device state") from exc
             raise
         await self.coordinator.async_request_refresh()
 
@@ -446,4 +499,177 @@ class SoundbarLocalSoundModeSelect(_SoundbarLocalSelect):
 
     async def async_select_option(self, option: str) -> None:
         await self._soundbar.set_sound_mode(option)
+        await self._coordinator.async_request_refresh()
+
+
+class _FrameLocalSelect(SelectEntity):
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str, key: str, name: str) -> None:
+        self._coordinator = coordinator
+        self._frame = frame
+        self._host = host
+        self._attr_unique_id = f"frame_local_{host}_{key}"
+        self._attr_name = name
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"frame_local_{host}")},
+            manufacturer="Samsung",
+            model="The Frame (Local)",
+            name=f"Frame TV {host}",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.last_update_success and bool(self._coordinator.data.get("online", False))
+
+
+class FrameLocalAppSelect(_FrameLocalSelect):
+    """Launch apps directly on Frame TV local websocket API."""
+
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "app", "App")
+        self._dynamic: list[str] = []
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self.hass is not None:
+            self.hass.async_create_task(self._async_refresh_apps())
+
+    async def _async_refresh_apps(self) -> None:
+        try:
+            apps = await self._frame.list_apps()
+        except Exception:
+            return
+        out: list[str] = []
+        for item in apps:
+            if not isinstance(item, dict):
+                continue
+            app_id = item.get("appId") or item.get("app_id")
+            name = item.get("name")
+            if isinstance(app_id, str) and app_id and isinstance(name, str) and name:
+                label = f"{name} ({app_id})"
+                if label not in out:
+                    out.append(label)
+        if out:
+            self._dynamic = out
+            self.async_write_ha_state()
+
+    @property
+    def options(self) -> list[str]:
+        # Dynamic installed-app list first, curated fallback second.
+        if self._dynamic:
+            return self._dynamic
+        return app_options()
+
+    @property
+    def current_option(self) -> str | None:
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        app = resolve_app(option)
+        if app is None and option.endswith(")") and " (" in option:
+            # Accept dynamic app labels even if not in curated list.
+            app_id = option.rsplit("(", 1)[-1].rstrip(")").strip()
+            if app_id:
+                await self._frame.run_app(app_id)
+                await self._coordinator.async_request_refresh()
+                return
+            raise HomeAssistantError(f"Unknown app option: {option}")
+        if app is None:
+            raise HomeAssistantError(f"Unknown app option: {option}")
+        await self._frame.run_app(app.app_id)
+        await self._coordinator.async_request_refresh()
+
+
+class FrameLocalArtworkSelect(_FrameLocalSelect):
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "artwork", "Artwork")
+
+    @property
+    def options(self) -> list[str]:
+        data = self._coordinator.data.get("artwork_ids")
+        if isinstance(data, list):
+            return [str(x) for x in data if isinstance(x, str)]
+        return []
+
+    @property
+    def current_option(self) -> str | None:
+        value = self._coordinator.data.get("current_artwork_id")
+        if not isinstance(value, str) or not value:
+            return None
+        # Return current id even if options list is empty/incomplete on this firmware.
+        return value
+
+    async def async_select_option(self, option: str) -> None:
+        try:
+            await self._frame.select_artwork(option, True)
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to select artwork on Frame TV: {err}") from err
+        await self._coordinator.async_request_refresh()
+
+
+class FrameLocalMatteSelect(_FrameLocalSelect):
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "matte", "Matte")
+        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_visible_default = False
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def options(self) -> list[str]:
+        data = self._coordinator.data.get("matte_options")
+        if isinstance(data, list):
+            return [str(x) for x in data if isinstance(x, str)]
+        return []
+
+    @property
+    def current_option(self) -> str | None:
+        value = self._coordinator.data.get("current_matte")
+        return value if isinstance(value, str) and value in self.options else None
+
+    async def async_select_option(self, option: str) -> None:
+        current_art = self._coordinator.data.get("current_artwork_id")
+        if not isinstance(current_art, str) or not current_art:
+            raise HomeAssistantError("No current artwork selected on TV")
+        try:
+            await self._frame.change_matte(current_art, option)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Matte change is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to change matte: {err}") from err
+        await self._coordinator.async_request_refresh()
+
+
+class FrameLocalPhotoFilterSelect(_FrameLocalSelect):
+    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+        super().__init__(coordinator, frame, host, "photo_filter", "Photo Filter")
+        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_visible_default = False
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def options(self) -> list[str]:
+        data = self._coordinator.data.get("photo_filter_options")
+        if isinstance(data, list):
+            return [str(x) for x in data if isinstance(x, str)]
+        return []
+
+    @property
+    def current_option(self) -> str | None:
+        value = self._coordinator.data.get("current_filter")
+        return value if isinstance(value, str) and value in self.options else None
+
+    async def async_select_option(self, option: str) -> None:
+        current_art = self._coordinator.data.get("current_artwork_id")
+        if not isinstance(current_art, str) or not current_art:
+            raise HomeAssistantError("No current artwork selected on TV")
+        try:
+            await self._frame.set_photo_filter(current_art, option)
+        except FrameLocalUnsupportedError as err:
+            raise HomeAssistantError("Photo filter is not supported on this Frame TV.") from err
+        except FrameLocalError as err:
+            raise HomeAssistantError(f"Failed to set photo filter: {err}") from err
         await self._coordinator.async_request_refresh()

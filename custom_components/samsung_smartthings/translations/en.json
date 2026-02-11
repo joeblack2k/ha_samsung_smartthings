@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Samsung SmartThings",
-        "description": "Choose how you want to connect. Recommended: reuse the existing Home Assistant SmartThings login (no credentials). OAuth2 (bring your own app) is for developers. PAT tokens may be short-lived. Local Soundbar connects directly on your LAN.",
+        "description": "Choose how you want to connect. Recommended: reuse the existing Home Assistant SmartThings login (no credentials). OAuth2 (bring your own app) is for developers. PAT tokens may be short-lived. Local Soundbar and Frame TV modes connect directly on your LAN.",
         "data": {
           "entry_type": "Setup type"
         }
@@ -28,6 +28,14 @@
         "data": {
           "host": "Soundbar IP address",
           "verify_ssl": "Verify SSL certificate (usually off)"
+        }
+      },
+      "frame_local": {
+        "title": "Frame TV Local (LAN Art API)",
+        "description": "Connect directly to Samsung The Frame via local websocket Art API. On first connection, approve pairing on the TV popup. The integration will automatically try port 8002 and fall back to 8001.",
+        "data": {
+          "host": "Frame TV IP address",
+          "ws_name": "Client name shown on TV"
         }
       }
     },

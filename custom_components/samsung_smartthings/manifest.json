@@ -1,6 +1,6 @@
 {
   "domain": "samsung_smartthings",
-  "name": "Samsung SmartThings (Cloud)",
+  "name": "Samsung SmartThings (Cloud + Local)",
   "codeowners": ["@joeblack2k"],
   "config_flow": true,
   "dependencies": ["application_credentials"],
@@ -9,6 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/joeblack2k/ha_samsung_smartthings/issues",
   "loggers": ["custom_components.samsung_smartthings"],
-  "requirements": [],
-  "version": "0.4.0"
+  "requirements": ["samsungtvws==3.0.3"],
+  "version": "0.5.0"
 }
