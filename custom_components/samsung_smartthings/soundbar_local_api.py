@@ -126,6 +126,12 @@ class AsyncSoundbarLocal:
     async def mute_toggle(self) -> None:
         await self._call("remoteKeyControl", remoteKey="MUTE")
 
+    async def sub_plus(self) -> None:
+        await self._call("remoteKeyControl", remoteKey="WOOFER_PLUS")
+
+    async def sub_minus(self) -> None:
+        await self._call("remoteKeyControl", remoteKey="WOOFER_MINUS")
+
     async def set_volume(self, level: int) -> None:
         if not 0 <= level <= 100:
             raise ValueError("Volume has to be in range 0-100")
