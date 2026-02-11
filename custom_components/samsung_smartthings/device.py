@@ -400,7 +400,7 @@ class SmartThingsDevice:
         if self._cloud_soundmodes:
             return list(self._cloud_soundmodes)
         model = self._model_code()
-        base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE"]
+        base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE", "ADAPTIVE_SOUND"]
         if model.startswith("HW-Q"):
             modes = base + ["DTS_VIRTUAL_X", "MUSIC", "CLEARVOICE", "MOVIE"]
         elif model.startswith("HW-S"):
@@ -418,6 +418,22 @@ class SmartThingsDevice:
             if lower not in out:
                 out.append(lower)
         return out
+
+    def _soundmode_write_candidates(self, mode: str) -> list[str]:
+        """Return mode write candidates with model/firmware aliases."""
+        out: list[str] = []
+        normalized = mode.strip().lower()
+        if normalized in ("adaptive", "adaptive_sound"):
+            # Some soundbars require adaptive_sound, others adaptive.
+            out.extend([mode, "adaptive_sound", "adaptive", "ADAPTIVE_SOUND", "ADAPTIVE"])
+        else:
+            out.append(mode)
+
+        dedup: list[str] = []
+        for candidate in out:
+            if candidate not in dedup:
+                dedup.append(candidate)
+        return dedup
 
     async def _ensure_validated_soundmode_options(self) -> None:
         """Validate fallback sound modes by command+readback.
@@ -500,7 +516,19 @@ class SmartThingsDevice:
     # -- Soundbar execute-based setters --
 
     async def set_soundbar_soundmode(self, mode: str) -> None:
-        await self.execute_set(EXECUTE_SOUNDMODE, "x.com.samsung.networkaudio.soundmode", mode)
+        last_exc: ClientResponseError | None = None
+        for candidate in self._soundmode_write_candidates(mode):
+            try:
+                await self.execute_set(EXECUTE_SOUNDMODE, "x.com.samsung.networkaudio.soundmode", candidate)
+                return
+            except ClientResponseError as exc:
+                # Retry with alias candidates for mode-validation failures.
+                if exc.status in (400, 409, 422):
+                    last_exc = exc
+                    continue
+                raise
+        if last_exc is not None:
+            raise last_exc
 
     async def set_woofer_level(self, level: int) -> None:
         await self.execute_set(EXECUTE_WOOFER, "x.com.samsung.networkaudio.woofer", level)
