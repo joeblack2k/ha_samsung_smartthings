@@ -39,6 +39,7 @@ class SmartThingsDevice:
         device_id: str,
         *,
         expose_all: bool,
+        cloud_soundmodes: list[str] | None = None,
         device: dict[str, Any] | None = None,
     ) -> None:
         self.api = api
@@ -46,6 +47,7 @@ class SmartThingsDevice:
         self.expose_all = expose_all
         self.runtime: DeviceRuntime | None = None
         self._device_prefetch = device if isinstance(device, dict) else None
+        self._cloud_soundmodes = [s for s in (cloud_soundmodes or []) if isinstance(s, str) and s.strip()]
 
         # Serialize outgoing commands per device to reduce 409 conflicts.
         self._cmd_lock = asyncio.Lock()
@@ -393,15 +395,27 @@ class SmartThingsDevice:
 
     def _fallback_soundmode_candidates(self) -> list[str]:
         """Model-aware fallback candidates used when ST omits supportedSoundmode."""
+        if self._cloud_soundmodes:
+            return list(self._cloud_soundmodes)
         model = self._model_code()
         base = ["STANDARD", "SURROUND", "GAME", "ADAPTIVE"]
         if model.startswith("HW-Q"):
-            return base + ["DTS_VIRTUAL_X", "MUSIC", "CLEARVOICE", "MOVIE"]
-        if model.startswith("HW-S"):
-            return base + ["MUSIC", "CLEARVOICE"]
-        if model.startswith("HW-"):
-            return base + ["MUSIC"]
-        return base
+            modes = base + ["DTS_VIRTUAL_X", "MUSIC", "CLEARVOICE", "MOVIE"]
+        elif model.startswith("HW-S"):
+            modes = base + ["MUSIC", "CLEARVOICE"]
+        elif model.startswith("HW-"):
+            modes = base + ["MUSIC"]
+        else:
+            modes = base
+        # Add lowercase variants because some firmware only accepts lowercase mode values.
+        out: list[str] = []
+        for mode in modes:
+            if mode not in out:
+                out.append(mode)
+            lower = mode.lower()
+            if lower not in out:
+                out.append(lower)
+        return out
 
     async def _ensure_validated_soundmode_options(self) -> None:
         """Validate fallback sound modes by command+readback.
@@ -425,6 +439,7 @@ class SmartThingsDevice:
 
         original = self._sb_soundmode if isinstance(self._sb_soundmode, str) else None
         validated: list[str] = []
+        had_readback = False
         for mode in self._fallback_soundmode_candidates():
             try:
                 await self.set_soundbar_soundmode(mode)
@@ -432,6 +447,7 @@ class SmartThingsDevice:
                 payload = await self.execute_query(EXECUTE_SOUNDMODE)
                 current = payload.get("x.com.samsung.networkaudio.soundmode") if isinstance(payload, dict) else None
                 if isinstance(current, str):
+                    had_readback = True
                     self._sb_soundmode = current
                 if current == mode:
                     validated.append(mode)
@@ -458,6 +474,14 @@ class SmartThingsDevice:
                 dedup.append(mode)
         if dedup:
             self._sb_soundmodes = dedup
+        elif not had_readback:
+            # SmartThings sometimes returns null execute data while still accepting soundmode
+            # commands. In that case expose fallback candidates so users can try working values.
+            fallback = []
+            for mode in self._fallback_soundmode_candidates():
+                if mode not in fallback:
+                    fallback.append(mode)
+            self._sb_soundmodes = fallback
         self._sb_soundmode_validation_done = True
 
     # -- Soundbar execute-based setters --

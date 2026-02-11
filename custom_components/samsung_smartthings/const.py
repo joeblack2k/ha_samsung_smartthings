@@ -24,6 +24,7 @@ CONF_ADD_ALL = "add_all"
 CONF_INCLUDE_NON_SAMSUNG = "include_non_samsung"
 CONF_DISCOVERY_INTERVAL = "discovery_interval"
 CONF_MANAGE_DIAGNOSTICS = "manage_diagnostics"
+CONF_CLOUD_SOUNDMODES = "cloud_soundmodes"
 
 # Default to a clean, reliable setup. SmartThings cloud rate-limits aggressively
 # (429) and many Samsung devices expose a very large capability surface.
@@ -36,6 +37,7 @@ DEFAULT_INCLUDE_NON_SAMSUNG = False
 # the entry if new devices appear.
 DEFAULT_DISCOVERY_INTERVAL = 3600  # seconds
 DEFAULT_MANAGE_DIAGNOSTICS = True
+DEFAULT_CLOUD_SOUNDMODES = ""
 
 # Local soundbar poll interval: LAN is fast, but don't spam.
 DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL = 10  # seconds

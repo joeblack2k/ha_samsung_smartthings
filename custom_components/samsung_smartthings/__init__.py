@@ -17,6 +17,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    CONF_CLOUD_SOUNDMODES,
     CONF_DEVICE_ID,
     CONF_DEVICE_IDS,
     CONF_DISCOVERY_INTERVAL,
@@ -30,6 +31,7 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
+    DEFAULT_CLOUD_SOUNDMODES,
     DEFAULT_EXPOSE_ALL,
     DEFAULT_INCLUDE_NON_SAMSUNG,
     DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL,
@@ -365,6 +367,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(entry, options=new_opts)
     include_non_samsung = bool(opts.get(CONF_INCLUDE_NON_SAMSUNG, DEFAULT_INCLUDE_NON_SAMSUNG))
     manage_diagnostics = bool(opts.get(CONF_MANAGE_DIAGNOSTICS, DEFAULT_MANAGE_DIAGNOSTICS))
+    cloud_soundmodes_raw = str(opts.get(CONF_CLOUD_SOUNDMODES, DEFAULT_CLOUD_SOUNDMODES) or "").strip()
+    cloud_soundmodes = [s.strip() for s in cloud_soundmodes_raw.split(",") if s.strip()]
 
     oauth_session = None
     auth_is_oauth = False
@@ -446,7 +450,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not isinstance(did, str) or not did:
             continue
         # Use the already-fetched device payload to avoid extra per-device API calls.
-        dev = SmartThingsDevice(api, did, expose_all=expose_all, device=d)
+        dev = SmartThingsDevice(
+            api,
+            did,
+            expose_all=expose_all,
+            device=d,
+            cloud_soundmodes=cloud_soundmodes,
+        )
         await dev.async_init()
 
         coordinator = SmartThingsCoordinator(hass, dev, hub_id=hub_id, scan_interval=scan_interval)

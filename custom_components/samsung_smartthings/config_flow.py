@@ -11,6 +11,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 import voluptuous as vol
 
 from .const import (
+    CONF_CLOUD_SOUNDMODES,
     CONF_DISCOVERY_INTERVAL,
     CONF_ENTRY_TYPE,
     CONF_EXPOSE_ALL,
@@ -22,6 +23,7 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
     DEFAULT_DISCOVERY_INTERVAL,
+    DEFAULT_CLOUD_SOUNDMODES,
     DEFAULT_EXPOSE_ALL,
     DEFAULT_INCLUDE_NON_SAMSUNG,
     DEFAULT_MANAGE_DIAGNOSTICS,
@@ -292,6 +294,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             expose_all = bool(user_input.get(CONF_EXPOSE_ALL, DEFAULT_EXPOSE_ALL))
             include_non_samsung = bool(user_input.get(CONF_INCLUDE_NON_SAMSUNG, DEFAULT_INCLUDE_NON_SAMSUNG))
             manage_diagnostics = bool(user_input.get(CONF_MANAGE_DIAGNOSTICS, DEFAULT_MANAGE_DIAGNOSTICS))
+            cloud_soundmodes = str(user_input.get(CONF_CLOUD_SOUNDMODES, DEFAULT_CLOUD_SOUNDMODES) or "").strip()
 
             # Minimal validation.
             if scan_interval < 5 or scan_interval > 300:
@@ -307,6 +310,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_DISCOVERY_INTERVAL: discovery_interval,
                         CONF_INCLUDE_NON_SAMSUNG: include_non_samsung,
                         CONF_MANAGE_DIAGNOSTICS: manage_diagnostics,
+                        CONF_CLOUD_SOUNDMODES: cloud_soundmodes,
                     },
                 )
 
@@ -331,6 +335,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_MANAGE_DIAGNOSTICS,
                         default=opts.get(CONF_MANAGE_DIAGNOSTICS, DEFAULT_MANAGE_DIAGNOSTICS),
                     ): bool,
+                    vol.Required(
+                        CONF_CLOUD_SOUNDMODES,
+                        default=opts.get(CONF_CLOUD_SOUNDMODES, DEFAULT_CLOUD_SOUNDMODES),
+                    ): str,
                 }
             ),
             errors=errors,

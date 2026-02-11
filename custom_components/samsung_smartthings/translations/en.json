@@ -52,7 +52,8 @@
           "scan_interval": "Polling interval (seconds)",
           "discovery_interval": "Device discovery interval (seconds)",
           "include_non_samsung": "Include non-Samsung devices",
-          "manage_diagnostics": "Hide/disable diagnostic entities by default"
+          "manage_diagnostics": "Hide/disable diagnostic entities by default",
+          "cloud_soundmodes": "Cloud sound mode candidates (comma-separated, used if SmartThings returns no options)"
         }
       }
     }
