@@ -1,61 +1,61 @@
 # Credits & References
 
-![Icon](assets/integration-icon.png)
+![Integration Icon](assets/integration-icon.png)
 
-Deze integratie bouwt voort op werk van veel developers in de community. Grote dank aan iedereen die reverse-engineering, libraries, issues en documentatie heeft gedeeld.
+This integration stands on the work of many open-source developers. Huge thanks to everyone who shared reverse-engineering notes, libraries, issue analyses, and protocol research.
 
-## Special thanks
+## Key projects and references
 
-## Core libraries en integraties
+## Core libraries and integrations
 
-- **xchwarze/samsung-tv-ws-api**
-  - https://github.com/xchwarze/samsung-tv-ws-api
-  - Basiskennis voor Samsung TV websocket gedrag
+- **xchwarze/samsung-tv-ws-api**  
+  https://github.com/xchwarze/samsung-tv-ws-api  
+  Foundational Samsung TV websocket behavior and protocol knowledge.
 
-- **ollo69/ha-samsungtv-smart**
-  - https://github.com/ollo69/ha-samsungtv-smart
-  - Referentie voor Home Assistant TV-entity patterns en remote gedrag
+- **ollo69/ha-samsungtv-smart**  
+  https://github.com/ollo69/ha-samsungtv-smart  
+  Strong Home Assistant TV integration patterns and remote behavior references.
 
-- **ZtF/hass-samsung-soundbar-local**
-  - https://github.com/ZtF/hass-samsung-soundbar-local
-  - Belangrijke bron voor local soundbar protocol op 1516
+- **ZtF/hass-samsung-soundbar-local**  
+  https://github.com/ZtF/hass-samsung-soundbar-local  
+  Major source for local soundbar protocol work on port 1516.
 
-## Frame/art ecosysteem
+## Frame / art ecosystem projects
 
-- **jonwomack/samsung-frame-tv-art**
-  - https://github.com/jonwomack/samsung-frame-tv-art
+- **jonwomack/samsung-frame-tv-art**  
+  https://github.com/jonwomack/samsung-frame-tv-art
 
-- **turley/frame-tv-artwork-sync**
-  - https://github.com/turley/frame-tv-artwork-sync
+- **turley/frame-tv-artwork-sync**  
+  https://github.com/turley/frame-tv-artwork-sync
 
-- **NickWaterton/samsung-tv-ws-api**
-  - https://github.com/NickWaterton/samsung-tv-ws-api
+- **NickWaterton/samsung-tv-ws-api**  
+  https://github.com/NickWaterton/samsung-tv-ws-api
 
-- **joakimjalden/frame_art**
-  - https://github.com/joakimjalden/frame_art
+- **joakimjalden/frame_art**  
+  https://github.com/joakimjalden/frame_art
 
-- **ow/samsung-frame-art**
-  - https://github.com/ow/samsung-frame-art
+- **ow/samsung-frame-art**  
+  https://github.com/ow/samsung-frame-art
 
-- **jhawthorn/tvart**
-  - https://github.com/jhawthorn/tvart
+- **jhawthorn/tvart**  
+  https://github.com/jhawthorn/tvart
 
 ## Community issue research
 
-- **samuelspagl/ha_samsung_soundbar**
-  - Issue #26: https://github.com/samuelspagl/ha_samsung_soundbar/issues/26
-  - Issue #43: https://github.com/samuelspagl/ha_samsung_soundbar/issues/43
+- **samuelspagl/ha_samsung_soundbar**  
+  Issue #26: https://github.com/samuelspagl/ha_samsung_soundbar/issues/26  
+  Issue #43: https://github.com/samuelspagl/ha_samsung_soundbar/issues/43
 
-- Home Assistant community thread over soundmode varianten:
-  - https://community.home-assistant.io/t/how-to-change-the-sound-mode-on-a-samsung-soundbar-solution/552430/8
+- Home Assistant community sound mode thread:  
+  https://community.home-assistant.io/t/how-to-change-the-sound-mode-on-a-samsung-soundbar-solution/552430/8
 
-## Ode to the builders
+## Thank you note
 
-Aan alle maintainers, hobbyisten, reverse-engineers en bug reporters:
+To all maintainers, hobbyists, reverse-engineers, and bug reporters:
 
-Jullie commits, issue comments, packet captures, protocol-notes en edge-case tests hebben direct geleid tot betere stabiliteit, duidelijkere foutafhandeling en bredere device support in deze integratie.
+Your commits, issue comments, packet captures, protocol notes, and edge-case tests directly improved stability, fallback behavior, and model coverage in this integration.
 
-Deze wiki is bedoeld als levende kennisbank die jullie werk erkent en versterkt.
+This wiki exists to document that shared knowledge and make it easier for the next contributor to build on it.
 
-Dank voor het open-source fundament.
+Thank you for the open-source foundation.
 

@@ -1,39 +1,39 @@
 # Frame TV Deep Dive
 
-## Architectuur
+## Architecture
 
-De Frame ondersteuning heeft twee paden:
+Frame support has two control paths:
 
 1. **Cloud TV** via SmartThings capabilities
-2. **Frame Local** via websocket art API (`samsungtvws`)
+2. **Frame Local** via websocket art API (`samsungtvws` wrapper)
 
-Voor art workflows is local leidend.
+For artwork workflows, local mode is the primary path.
 
-## Local Frame API gedragsmodel
+## Local Frame API behavior model
 
-De local client:
-- probeert geconfigureerde websocket port plus alternates (`8002`, `8001`)
-- onthoudt laatste werkende port
-- gebruikt lock voor async-safe calls
-- markeert unsupported methods op basis van foutcodes
+The local client:
+- Tries configured websocket port and alternates (`8002`, `8001`)
+- Remembers the last working port
+- Uses an async lock for call safety
+- Marks unsupported methods using error code heuristics
 
-Belangrijke signalen:
-- `error number -1` -> vaak unsupported method op dit model
-- `error number -9` -> vaak invalid slideshow category
+Important local error patterns:
+- `error number -1`: usually unsupported method for current model/firmware
+- `error number -9`: usually invalid slideshow category
 
-## Exposed Frame Entities
+## Exposed Frame entities
 
 - `media_player.frame_tv_<ip>_art_browser`
 - `switch.frame_tv_<ip>_art_mode`
 - `select.frame_tv_<ip>_app`
 - `select.frame_tv_<ip>_artwork`
 - `number.frame_tv_<ip>_art_brightness`
-- Sensors voor api version, current artwork, artwork count
-- Diagnostische selects voor matte/filter (standaard verborgen/uit)
+- Sensors for API version, current artwork, and artwork count
+- Diagnostic selects for matte/filter (hidden/disabled by default)
 
-## Frame Services
+## Frame services
 
-Kernservices:
+Core lifecycle services:
 - `frame_upload_artwork`
 - `frame_select_artwork`
 - `frame_delete_artwork`
@@ -43,40 +43,40 @@ Kernservices:
 - `frame_set_internet_artwork`
 - `frame_set_favorite_artwork`
 
-Advanced:
+Advanced services:
 - `frame_set_slideshow`
 - `frame_set_motion_timer`
 - `frame_set_motion_sensitivity`
 - `frame_set_brightness_sensor`
 
-## Border/Matte logica
+## Border/matte handling
 
-- `use_border: false` -> probeert border te vermijden (none/zonder matte)
-- `matte_id` kan expliciet gekozen worden
-- als matte operation faalt, blijft artwork selectie geslaagd waar mogelijk
+- `use_border: false` attempts borderless rendering (`none`/best available equivalent)
+- `matte_id` can explicitly force a matte style
+- If matte update fails, artwork selection still completes where possible
 
-## Media Browser + Panel
+## Media browser + panel behavior
 
-De integratie ondersteunt:
-- local folder (`/config/FrameTV`) artwork selectie
-- internet collecties (`museums`, `nature`, `architecture`)
-- favorites workflow
+The integration supports:
+- Local folder browsing (`/config/FrameTV`)
+- Internet collections (`museums`, `nature`, `architecture`)
+- Favorites workflow
 
-## App Launch op Frame
+## App launch on Frame
 
-Nu ondersteund via:
+Supported via:
 - `select.frame_tv_<ip>_app`
-- `media_player.play_media` met `media_content_type: app`
-- `media_player.play_media` met URL:
+- `media_player.play_media` with `media_content_type: app`
+- `media_player.play_media` with URL:
   - YouTube URL -> YouTube app deep-link
-  - overige URL -> browser open
+  - Other URL -> TV browser open
 
-## Automation voorbeelden
+## Automation examples
 
-## Maandelijks random museum artwork
+## Monthly random museum artwork
 
 ```yaml
-alias: Frame maandelijkse random museum art
+alias: Frame monthly random museum art
 trigger:
   - platform: time
     at: "09:00:00"
@@ -93,10 +93,10 @@ action:
       use_border: false
 ```
 
-## Eerste dag maand lokaal bestand als wallpaper
+## First day of month: set local wallpaper file
 
 ```yaml
-alias: Frame maandelijkse lokale wallpaper
+alias: Frame monthly local wallpaper
 trigger:
   - platform: time
     at: "09:05:00"
@@ -112,10 +112,10 @@ action:
       use_border: false
 ```
 
-## YouTube video starten op Frame
+## Play a specific YouTube video on Frame
 
 ```yaml
-alias: Speel YouTube op Frame
+alias: Play YouTube on Frame
 trigger:
   - platform: state
     entity_id: input_boolean.start_video

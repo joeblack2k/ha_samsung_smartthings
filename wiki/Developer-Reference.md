@@ -1,32 +1,31 @@
 # Developer Reference (SmartThings + Local APIs)
 
-Deze pagina is bedoeld als **technische hoofdbron** voor maintainers, contributors en reverse-engineers.
+This page is intended as a technical reference for maintainers, contributors, and reverse-engineers.
 
-## 1. Integratie Architectuur
+## 1) Integration architecture
 
-Repo domein: `custom_components/samsung_smartthings`
+Domain package: `custom_components/samsung_smartthings`
 
-Belangrijke modules:
+Key modules:
 - `__init__.py` -> setup, services, coordinators, panel API
-- `config_flow.py` -> onboarding van cloud/local entry types
-- `device.py` -> SmartThings device helper, execute logica, retries
-- `smartthings_api.py` -> REST client voor SmartThings
+- `config_flow.py` -> onboarding for cloud/local entry types
+- `device.py` -> SmartThings device helper, execute logic, retries
+- `smartthings_api.py` -> SmartThings REST client
 - `frame_local_api.py` -> local websocket art client (`samsungtvws` wrapper)
 - `soundbar_local_api.py` -> local JSON-RPC client (HTTPS 1516)
-- platform modules (`media_player.py`, `select.py`, `switch.py`, etc.)
+- Platform modules (`media_player.py`, `select.py`, `switch.py`, etc.)
 
-## Entry types
-
+Entry types:
 - `cloud`
 - `soundbar_local`
 - `frame_local`
 
-## 2. SmartThings Cloud API contract
+## 2) SmartThings cloud API contract
 
 Base URL:
 - `https://api.smartthings.com/v1`
 
-Gebruik:
+Main endpoints used:
 - `GET /devices`
 - `GET /devices/{deviceId}`
 - `GET /devices/{deviceId}/status`
@@ -47,24 +46,24 @@ Command payload shape:
 }
 ```
 
-## 3. Cloud throttling en retries
+## 3) Cloud throttling and retry behavior
 
-De integratie behandelt veelvoorkomende statuses defensief:
+The integration hardens against common transient statuses:
 - `409 Conflict`
 - `429 TooManyRequestError`
-- `503 Service unavailable`
+- `503 Service Unavailable`
 
-Gedrag:
-- Per-device command lock (`asyncio.Lock`)
-- Retry/backoff ladder voor send_command
-- Polling niet te agressief (defaults conservatief)
-- Last-known state behouden bij 429 tijdens refresh
+Design:
+- Per-device command serialization (`asyncio.Lock`)
+- Retry/backoff ladder in `send_command`
+- Conservative default polling intervals
+- Last-known state retained when refresh hits 429
 
-## 4. Execute capability (soundbar)
+## 4) Execute capability (soundbar)
 
-Veel soundbar functies lopen via capability `execute`.
+Many soundbar controls are implemented through `execute`.
 
-Belangrijke href routes:
+Important href routes:
 - `/sec/networkaudio/soundmode`
 - `/sec/networkaudio/woofer`
 - `/sec/networkaudio/eq`
@@ -75,32 +74,30 @@ Belangrijke href routes:
 - `/sec/networkaudio/spacefitSound`
 
 Known issue:
-- Sommige modellen accepteren write calls maar geven lege/null payload terug in status readback.
+- Some models accept writes but return empty/null execute readback payload.
 
-Mitigatie in integratie:
-- fallback sound mode candidate sets
-- alias-normalisatie voor adaptive mode
-- mode validation throttling
+Mitigation:
+- Fallback sound mode candidate sets
+- Adaptive alias normalization
+- Throttled validation cycles
 
-## 5. Adaptive mode aliasing
+## 5) Adaptive sound alias handling
 
-Omdat modellen verschillende waarden accepteren:
+To handle firmware differences, write candidates include:
 - `adaptive`
 - `adaptive_sound`
 - `adaptive sound`
-- uppercase varianten
+- Uppercase variants
 
-Write-path probeert meerdere aliases in volgorde totdat een geldige variant geaccepteerd wordt.
-
-## 6. Local Soundbar API (1516)
+## 6) Local soundbar API (1516)
 
 Transport:
 - HTTPS JSON-RPC (`https://<host>:1516/`)
-- meestal self-signed cert
+- Typically self-signed cert
 
 Token flow:
 - `createAccessToken`
-- token in verdere method calls als `AccessToken`
+- Subsequent methods include `AccessToken`
 
 Core methods:
 - `powerControl`
@@ -111,83 +108,83 @@ Core methods:
 - `getVolume`, `getMute`, `getCodec`, `getIdentifier`
 
 Night mode strategy:
-1. `setAdvancedSoundSettings({nightMode})`
-2. fallback `ms.channel.emit` event payload
+1. `setAdvancedSoundSettings` with `nightMode`
+2. Fallback `ms.channel.emit` payload
 
-## 7. Frame Local API
+## 7) Frame local API
 
-Wrapper gebruikt `samsungtvws` art API.
+The wrapper uses `samsungtvws` art API and adds reliability behavior.
 
-Port strategy:
-- preferred active port
-- configured port
-- alternates (`8002`, `8001`)
+Port probing strategy:
+- Last known active port
+- Configured port
+- Alternates (`8002`, `8001`)
 
-Methoden:
+Key methods:
 - `get_api_version`, `get_artmode`, `set_artmode`
 - `upload`, `select_image`, `delete`, `delete_list`
 - `get_thumbnail_list`, `get_current`
 - `get_matte_list`, `change_matte`
 - `get_photo_filter_list`, `set_photo_filter`
 - `get_slideshow_status`, `set_slideshow_status`
-- motion + brightness sensor setters
-- tv-level: `app_list`, `run_app`, `open_browser`
+- Motion + brightness-sensor setters
+- TV-level app methods: `app_list`, `run_app`, `open_browser`
 
-Foutcode heuristieken:
-- `-1`: unsupported operation op model/firmware
+Error heuristics:
+- `-1`: unsupported operation for current model/firmware
 - `-9`: invalid slideshow category
 
-## 8. App Launch implementatie
+## 8) App launch implementation
 
 Cloud TV:
-- capability `custom.launchapp`
-- entity: `select.<tv>_app`
-- media path: `media_player.play_media` (`app` type, plus YouTube URL fallback)
+- Capability: `custom.launchapp`
+- Entity: `select.<tv>_app`
+- Media behavior: `media_player.play_media` with `app` type and YouTube URL fallback
 
 Frame local:
-- `select.frame_tv_<ip>_app`
-- `media_player.play_media` met:
+- Entity: `select.frame_tv_<ip>_app`
+- Media behavior:
   - `app` -> `run_app`
-  - `url` -> YouTube deep-link of browser open
+  - `url` -> YouTube deep-link or browser open
 
-Catalogus:
-- gecureerde app list met bekende Tizen app IDs
-- resolutie op `app_id`, label, en `app:<id>` notatie
+App catalog:
+- Curated list of common Tizen app IDs
+- Resolver accepts app ID, label, or `app:<id>` format
 
-## 9. Home Assistant servicecontracten
+## 9) Home Assistant service contracts
 
-Belangrijkste servicegroepen:
+Main service groups:
 - Generic cloud: `raw_command`, `launch_app`, `set_art_mode`, `set_ambient_content`
 - Soundbar local: `set_night_mode`
-- Frame local lifecycle: upload/select/delete/sync
-- Frame local advanced: slideshow/motion/brightness sensor
+- Frame lifecycle: upload/select/delete/sync
+- Frame advanced: slideshow/motion/brightness sensor
 - Frame content helpers: local file, internet collections, favorites
 
-Controleer `services.yaml` voor actuele field schemas.
+Use `services.yaml` as the source of truth for service schemas.
 
-## 10. Observability en debugging
+## 10) Observability and debugging
 
-Minimale debug workflow:
+Minimal debug workflow:
 1. `ha core check` / `ha_check_config`
-2. restart of gerichte reload
-3. trigger service call
-4. lees `home-assistant.log`
+2. Restart or targeted reload
+3. Trigger service call
+4. Inspect `home-assistant.log`
 
-Let op:
-- Niet alle fouten in HA komen van deze integratie.
-- Filter logs specifiek op `samsung_smartthings` voor ruisvrije analyse.
+Notes:
+- Not all HA errors are caused by this integration.
+- Filter logs by `samsung_smartthings` first for signal over noise.
 
-## 11. Veiligheid en auth notes
+## 11) Security and auth notes
 
-- PAT tokens kunnen tijdelijk zijn (vaak 24u)
-- Voor productiesetup: HA SmartThings login of OAuth2 app flow
-- Local APIs draaien LAN-only maar geven sterke device-control; beperk netwerktoegang waar mogelijk
+- PAT tokens can be temporary (often ~24h)
+- For long-term setups: use HA SmartThings login reuse or OAuth2 app flow
+- Local APIs provide strong LAN control; limit network exposure accordingly
 
-## 12. Ontwikkelrichtlijnen voor contributors
+## 12) Contributor guidelines
 
-- Capability-gedreven bouwen, geen model hardcoding als enige check
-- Fallbacks toevoegen bij inconsistent readback gedrag
-- Nieuwe entities met high-noise/high-failure kans standaard diagnostisch hidden/disabled
-- Retrying alleen op bekende transient statussen
-- Maak automation-voorbeelden voor elke nieuwe user-facing functie
+- Prefer capability-driven behavior over hardcoded model-only logic
+- Add fallbacks for inconsistent readback behavior
+- Default noisy/fragile entities to diagnostic hidden/disabled
+- Retry only known transient status classes
+- Provide automation examples for every new user-facing feature
 

@@ -2,22 +2,22 @@
 
 ![Samsung SmartThings Integration](assets/integration-logo.png)
 
-Welkom bij de uitgebreide wiki voor **ha_samsung_smartthings**.
+Welcome to the detailed wiki for **ha_samsung_smartthings**.
 
-Deze integratie combineert:
-- SmartThings **Cloud** besturing voor Samsung TV's en soundbars
-- **Local LAN** besturing voor ondersteunde Samsung soundbars
-- **Frame TV Local Art API** voor betrouwbare art mode/artwork workflows
+This integration combines:
+- SmartThings **Cloud** control for Samsung TVs and soundbars
+- **Local LAN** control for supported Samsung soundbars
+- **Frame TV Local Art API** for reliable art mode and artwork workflows
 
-## Doelen van deze wiki
+## Wiki goals
 
-- Praktische onboarding (zonder vendor lock-in in 1 methode)
-- Technische compatibiliteitsmatrix per device type en pad (cloud/local)
-- Geavanceerde automation voorbeelden
-- Developer-level referentie (capabilities, endpoints, foutcodes, retries)
-- Gecureerde kennisbank gebaseerd op echte field-testing en open-source research
+- Practical onboarding without forcing a single auth strategy
+- Technical compatibility matrix per device type and control path (cloud/local)
+- Advanced automation examples
+- Developer-grade reference (capabilities, endpoints, error codes, retries)
+- A curated knowledge base built from real device testing and open-source research
 
-## Start Hier
+## Start here
 
 1. [Quick Start & Login Flows](Quick-Start-and-Login-Flows)
 2. [Compatibility Matrix](Compatibility-Matrix)
@@ -27,20 +27,20 @@ Deze integratie combineert:
 6. [Developer Reference](Developer-Reference)
 7. [Credits & References](Credits-and-References)
 
-## Kernprincipes van deze integratie
+## Integration principles
 
-- **Sane defaults**: geen entity-spam en diagnostiek standaard verborgen/uitgeschakeld.
-- **Best effort + graceful fallback**: veel Samsung API's zijn inconsistent; de integratie degradeert netjes.
-- **Cloud én local mogelijk**: cloud voor account-discovery en brede compatibiliteit, local voor deterministische controle.
-- **Automation-first**: services en media-player gedrag zijn ontworpen voor Home Assistant automation gebruik.
+- **Sane defaults**: no entity spam; noisy diagnostics are hidden/disabled by default.
+- **Best effort + graceful fallback**: Samsung APIs are inconsistent; behavior degrades safely.
+- **Cloud and local can coexist**: cloud for account discovery, local for deterministic control.
+- **Automation-first**: services and media-player behavior are designed for HA automations.
 
-## Snelle Samenvatting
+## Quick summary
 
-- Gebruik voor The Frame art workflows bij voorkeur **Frame TV Local (LAN Art API)**.
-- Gebruik voor 2024 Wi-Fi soundbars bij voorkeur **Soundbar Local (LAN)**.
-- Gebruik SmartThings Cloud voor discovery en brede device-support.
-- Voor app launch is nu beschikbaar:
+- For The Frame art workflows, prefer **Frame TV Local (LAN Art API)**.
+- For 2024 Wi-Fi soundbars, prefer **Soundbar Local (LAN)**.
+- Keep SmartThings Cloud for discovery and broad model coverage.
+- App launch is available through:
   - `select.<tv>_app`
-  - `media_player.play_media` met `media_content_type: app`
-  - YouTube URL best effort (cloud/local verschillend)
+  - `media_player.play_media` with `app` media type
+  - `samsung_smartthings.launch_app` service
 

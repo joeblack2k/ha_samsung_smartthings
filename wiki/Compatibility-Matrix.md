@@ -1,58 +1,58 @@
 # Compatibility Matrix
 
-## Overzicht
+## Overview
 
-Compatibiliteit is opgesplitst in:
-- **SmartThings Cloud path** (REST `/v1/devices/...` capabilities)
-- **Local LAN path** (model/firmware afhankelijk, direct device API)
+Compatibility is split by control path:
+- **SmartThings Cloud path** (REST capabilities via `/v1/devices/...`)
+- **Local LAN path** (direct device APIs, model/firmware dependent)
 
-## TV Matrix
+## TV matrix
 
 | Feature | SmartThings Cloud TV | Frame TV Local (Art API) |
 |---|---|---|
-| Device discovery | Ja | Nee (per-IP setup) |
-| Power on/off | Ja | Beperkt via art API context |
-| Volume/mute (waar capability bestaat) | Ja | Niet focus van art API |
-| App launch | Ja (`custom.launchapp`) | Ja (`run_app`) |
-| URL open | Beperkt (YouTube app fallback) | Ja (browser/open + YouTube deep link) |
-| Art Mode on/off | Best effort (model/account afhankelijk) | Ja |
-| Artwork upload/select/delete | Nee | Ja |
-| Matte/photo filter | Nee | Ja (indien firmware ondersteund) |
-| Slideshow/motion/brightness sensor | Nee | Ja (indien firmware ondersteund) |
+| Device discovery | Yes | No (per-IP setup) |
+| Power on/off | Yes | Limited in art API context |
+| Volume/mute (if capability exists) | Yes | Not the primary focus of art API |
+| App launch | Yes (`custom.launchapp`) | Yes (`run_app`) |
+| URL open | Limited (YouTube fallback) | Yes (browser/open + YouTube deep link) |
+| Art Mode on/off | Best effort (model/account dependent) | Yes |
+| Artwork upload/select/delete | No | Yes |
+| Matte/photo filter | No | Yes (if firmware exposes options) |
+| Slideshow/motion/brightness sensor settings | No | Yes (if firmware exposes options) |
 
-## Soundbar Matrix
+## Soundbar matrix
 
 | Feature | SmartThings Cloud Soundbar | Soundbar Local (LAN) |
 |---|---|---|
-| Discovery | Ja | Nee (per-IP setup) |
-| Power | Ja | Ja |
-| Volume/mute | Ja | Ja |
-| Input source | Vaak inconsistent op cloud | Ja (deterministischer) |
-| Sound mode | Ja (fallback aliases/candidates) | Ja (validated mode list) |
-| Night mode | Execute pad (model afhankelijk) | Ja (local advanced calls + fallback event) |
-| Advanced execute controls | Gedeeltelijk, vaak zonder readback | Gedeeltelijk, afhankelijk van method support |
+| Discovery | Yes | No (per-IP setup) |
+| Power | Yes | Yes |
+| Volume/mute | Yes | Yes |
+| Input source switching | Often inconsistent | Yes (more deterministic) |
+| Sound mode | Yes (fallback aliases/candidates) | Yes (validated mode list) |
+| Night mode | Execute path (model dependent) | Yes (local advanced call + fallback event) |
+| Advanced execute controls | Partial, often limited readback | Partial, method support varies |
 
-## Geteste modellen (praktijk)
+## Real-world tested models
 
-## Frame TV
+## Frame TVs
 
-- `QE65LS03BAUXXN` (The Frame 65) -> cloud + local flows gebruikt
-- `QE32LS03TBWXXN` (The Frame 32) -> local connectiviteit model/standby afhankelijk
+- `QE65LS03BAUXXN` (The Frame 65): cloud + local tested
+- `QE32LS03TBWXXN` (The Frame 32): local path is network/standby sensitive
 
 ## Soundbars
 
-- `HW-Q990D` -> cloud + local onderzocht/getest
-- `Q990C` -> community report: input switching issues op cloud mogelijk
+- `HW-Q990D`: cloud + local tested
+- `Q990C`: community reports confirm cloud input switching can be inconsistent
 
-## Niet-exhaustieve support statement
+## Capability-driven support model
 
-Deze integratie werkt capability-gedreven. Dat betekent:
-- Als capability op device aanwezig is, wordt functionaliteit geactiveerd.
-- Als capability onbetrouwbaar is (422/409/no readback), wordt gedrag defensief gemaakt.
+This integration is capability-driven:
+- If a capability is present and usable, entities/features are enabled.
+- If a capability is unreliable (`422`/`409`/missing readback), behavior is hardened with fallbacks.
 
-Dit is bewuste designkeuze, omdat Samsung gedrag per regio/model/firmware varieert.
+This is intentional because Samsung behavior differs by model, region, and firmware.
 
-## Waarom iets in SmartThings app soms wel werkt maar via API niet
+## Why SmartThings app may work when public API does not
 
-Veel Samsung/SmartThings workflows gebruiken interne paden die niet volledig in publiek REST gedrag terugkomen (of met andere validatie). Daardoor kun je verschil zien tussen app UI en API commando-uitkomst.
+Some Samsung app flows rely on internal pathways and state handling that are not fully mirrored by public SmartThings REST behavior. That can cause differences between app UI outcomes and API command outcomes.
 

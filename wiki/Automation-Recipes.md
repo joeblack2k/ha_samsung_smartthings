@@ -1,9 +1,9 @@
 # Automation Recipes
 
-## 1) Start specifieke YouTube video op Samsung The Frame (cloud media player)
+## 1) Play a specific YouTube video on The Frame (cloud media player)
 
 ```yaml
-alias: Speel specifieke YouTube video af op The Frame (Cloud)
+alias: Play specific YouTube video on The Frame (Cloud)
 trigger:
   - platform: state
     entity_id: input_boolean.start_video
@@ -17,10 +17,10 @@ action:
       media_content_type: "url"
 ```
 
-## 2) Start YouTube playlist op Frame Local
+## 2) Start YouTube playlist on Frame Local
 
 ```yaml
-alias: Start YouTube playlist op Frame Local
+alias: Start YouTube playlist on Frame Local
 trigger:
   - platform: state
     entity_id: input_boolean.start_playlist
@@ -34,10 +34,10 @@ action:
       media_content_type: "url"
 ```
 
-## 3) Launch app via select
+## 3) Launch app via select entity
 
 ```yaml
-alias: Launch Netflix via app-select
+alias: Launch Netflix via app select
 trigger:
   - platform: state
     entity_id: input_boolean.netflix
@@ -50,7 +50,7 @@ action:
       option: "Netflix (11101200001)"
 ```
 
-## 4) Launch app via media_player
+## 4) Launch app via media_player.play_media
 
 ```yaml
 alias: Launch Disney+ via media_player.play_media
@@ -67,10 +67,10 @@ action:
       media_content_id: "app:3201901017640"
 ```
 
-## 5) Eerste dag van de maand random internet-art uit categorie
+## 5) First day of month: random internet art by category
 
 ```yaml
-alias: Frame maandelijkse random art
+alias: Frame monthly random internet art
 trigger:
   - platform: time
     at: "09:00:00"
@@ -87,10 +87,10 @@ action:
       use_border: false
 ```
 
-## 6) Eerste dag van de maand vast lokaal bestand uit /config/FrameTV
+## 6) First day of month: fixed local file from /config/FrameTV
 
 ```yaml
-alias: Frame maandelijkse vaste wallpaper
+alias: Frame monthly fixed local wallpaper
 trigger:
   - platform: time
     at: "09:10:00"
@@ -106,10 +106,10 @@ action:
       use_border: false
 ```
 
-## 7) Maandelijks random favorite artwork
+## 7) Monthly random favorite artwork
 
 ```yaml
-alias: Frame maandelijkse favorite random
+alias: Frame monthly random favorite
 trigger:
   - platform: time
     at: "09:15:00"
@@ -125,10 +125,10 @@ action:
       use_border: false
 ```
 
-## 8) Soundbar night mode op basis van tijd
+## 8) Soundbar night mode schedule
 
 ```yaml
-alias: Soundbar Night Mode schedule
+alias: Soundbar night mode schedule
 trigger:
   - platform: time
     at: "23:00:00"
@@ -139,10 +139,10 @@ action:
       night: true
 ```
 
-## 9) Soundbar input source wissel
+## 9) Soundbar input source switch
 
 ```yaml
-alias: Soundbar naar HDMI 1
+alias: Soundbar switch to HDMI 1
 trigger:
   - platform: state
     entity_id: input_boolean.soundbar_hdmi1

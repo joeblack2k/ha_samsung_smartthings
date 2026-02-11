@@ -1,21 +1,21 @@
 # Quick Start & Login Flows
 
-## Installatie
+## Installation
 
-### HACS (aanbevolen)
+### HACS (recommended)
 
 1. Open HACS -> Integrations.
-2. Voeg deze repo toe als custom repository.
-3. Installeer de integratie.
+2. Add this repository as a custom repository.
+3. Install the integration.
 4. Restart Home Assistant.
 
-### Manual
+### Manual installation
 
-Kopieer `custom_components/samsung_smartthings` naar je HA `custom_components/` map en restart HA.
+Copy `custom_components/samsung_smartthings` into your HA `custom_components/` folder and restart HA.
 
-## Setup Types
+## Setup types
 
-Tijdens `Add integration` krijg je meerdere setup paden:
+When adding the integration, you can choose:
 
 1. **SmartThings Cloud (Use Home Assistant SmartThings login, recommended)**
 2. **SmartThings Cloud (OAuth2, bring your own app)**
@@ -23,96 +23,84 @@ Tijdens `Add integration` krijg je meerdere setup paden:
 4. **Soundbar Local (LAN)**
 5. **Frame TV Local (LAN, Art API)**
 
----
+## 1) Cloud using Home Assistant SmartThings login (recommended)
 
-## Login/Authenticatie Flows
+This is the easiest and most durable path for most users.
 
-## 1) Cloud via Home Assistant SmartThings login (aanbevolen)
+### Steps
 
-Dit is de meest gebruiksvriendelijke en stabiele route.
+1. Configure the official Home Assistant `SmartThings` integration first.
+2. Complete the browser login on SmartThings.
+3. Add this custom integration.
+4. Choose `SmartThings Cloud (Use Home Assistant SmartThings login, recommended)`.
+5. Select the existing SmartThings account/location entry.
 
-### Stappen
+### Why this path
 
-1. Configureer eerst de officiële Home Assistant `SmartThings` integratie.
-2. Rond browser-login af op SmartThings website.
-3. Voeg daarna deze custom integratie toe.
-4. Kies `SmartThings Cloud (Use Home Assistant SmartThings login, recommended)`.
-5. Selecteer de bestaande SmartThings account/location entry.
-
-### Waarom dit pad
-
-- Geen handmatige PAT rotatie.
-- Geen developer app registratie nodig.
-- Werkt voor meeste gebruikers direct.
-
----
+- No manual PAT rotation.
+- No separate developer app registration.
+- Fast onboarding for regular users.
 
 ## 2) Cloud via OAuth2 (bring your own app)
 
-Voor developers/advanced deploys.
+For advanced users and developers.
 
-### Benodigd
+### Requirements
 
-- SmartThings developer app (OAuth2 client id/secret)
-- Application Credentials in Home Assistant
+- SmartThings OAuth app (client ID/secret)
+- Home Assistant Application Credentials
 
-### Stappen
+### Steps
 
-1. Maak SmartThings OAuth app in SmartThings Developer Workspace.
-2. Zet redirect URI van Home Assistant in de app.
-3. Voeg credential toe in HA `Application Credentials`.
-4. Kies in config flow: `SmartThings Cloud (OAuth2, bring your own app)`.
-
----
+1. Create a SmartThings OAuth app in SmartThings Developer Workspace.
+2. Add Home Assistant callback URL to that app.
+3. Add credentials under HA `Application Credentials`.
+4. Choose `SmartThings Cloud (OAuth2, bring your own app)` in config flow.
 
 ## 3) Cloud via PAT token
 
-Snel voor debug/probes, minder geschikt voor permanente setup.
+Useful for quick testing, less suitable for long-term setups.
 
-### Belangrijk
+### Important
 
-- SmartThings PAT’s kunnen kort leven (vaak ~24 uur).
-- Gebruik liever HA SmartThings login of OAuth2 voor duurzame setup.
-
----
+- SmartThings PAT tokens can be short-lived (often around 24 hours).
+- Prefer HA SmartThings login or OAuth2 for permanent usage.
 
 ## 4) Soundbar Local (LAN)
 
-Voor ondersteunde Samsung Wi-Fi soundbars met local JSON-RPC API.
+For supported Samsung Wi-Fi soundbars with local JSON-RPC API.
 
-### Vereisten
+### Requirements
 
-- Soundbar op Wi-Fi
-- Device in SmartThings app
-- **IP control** ingeschakeld in SmartThings app
+- Soundbar connected to Wi-Fi
+- Device added in SmartThings app
+- **IP control** enabled in SmartThings app settings for that soundbar
 
-### Stappen
+### Steps
 
-1. Voeg integratie toe en kies `Soundbar Local (LAN)`.
-2. Vul soundbar IP in.
-3. `verify_ssl` meestal uit (self-signed cert).
-
----
+1. Add integration and choose `Soundbar Local (LAN)`.
+2. Enter soundbar IP address.
+3. Keep `verify_ssl` disabled in most setups (self-signed certificate).
 
 ## 5) Frame TV Local (LAN, Art API)
 
-Voor betrouwbare art mode en artwork lifecycle.
+For reliable Art Mode and artwork lifecycle control.
 
-### Vereisten
+### Requirements
 
-- Samsung The Frame op LAN
-- TV bereikbaar vanaf HA host
-- Smart Hub / websocket pairing beschikbaar
+- Samsung The Frame reachable on LAN
+- TV accessible from the HA host network
+- Smart Hub / websocket pairing available
 
-### Stappen
+### Steps
 
-1. Kies `Frame TV Local (LAN, Art API)`.
-2. Vul TV IP in.
-3. Stel client name in (optioneel).
-4. Accepteer pairing popup op TV.
+1. Choose `Frame TV Local (LAN, Art API)`.
+2. Enter TV IP address.
+3. Optionally set client name shown on TV.
+4. Accept the pairing popup on the TV.
 
 ### Troubleshooting
 
-- Als connectie faalt: controleer IP, slaapstand, netwerksegment, firewall.
-- De config flow valideert host vóór entry-creation om false positives te voorkomen.
+- If connection fails: verify IP, standby state, subnet routing, and firewall rules.
+- Config flow validates host connectivity before creating the entry.
 

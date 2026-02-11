@@ -1,29 +1,29 @@
 # Soundbar Deep Dive
 
-## Architectuur
+## Architecture
 
-Twee paden:
+There are two soundbar paths:
 
 1. **SmartThings Cloud soundbar** (capabilities + execute)
-2. **Soundbar Local LAN** (JSON-RPC over HTTPS:1516)
+2. **Soundbar Local LAN** (JSON-RPC over HTTPS on port 1516)
 
-## Cloud Soundbar - realiteit
+## Cloud soundbar realities
 
-SmartThings cloud voor soundbars is inconsistent op sommige firmware:
-- Commands geven `200` maar state blijft gelijk
-- `execute` payload/readback vaak leeg
-- Input source switching werkt niet altijd ondanks capability aanwezigheid
-- Rate limits (`429`) ontstaan snel bij polling + bursts
+SmartThings cloud can be inconsistent on some firmware:
+- Commands may return `200` while state does not change
+- `execute` readback payload is often empty/null
+- Input source switching can fail despite capability presence
+- Rate limits (`429`) occur quickly with aggressive polling/command bursts
 
-Daarom bevat de integratie:
-- retries/backoff op conflicts/rate limits
-- defensieve validatie
-- fallback sound mode candidates
-- diagnostische entities standaard hidden/disabled
+Mitigations in this integration:
+- Per-device command serialization
+- Retry/backoff for transient cloud failures
+- Fallback sound mode candidates and alias handling
+- Diagnostic entities hidden/disabled by default
 
 ## Execute endpoints (cloud)
 
-Belangrijke paden:
+Important execute routes:
 - `/sec/networkaudio/soundmode`
 - `/sec/networkaudio/woofer`
 - `/sec/networkaudio/eq`
@@ -33,64 +33,69 @@ Belangrijke paden:
 - `/sec/networkaudio/activeVoiceAmplifier`
 - `/sec/networkaudio/spacefitSound`
 
-## Sound mode aliases
+## Sound mode alias strategy
 
-Voor adaptive varianten ondersteunt de integratie meerdere schrijfwaarden:
+Adaptive variants are handled with multiple write aliases:
 - `adaptive`
 - `adaptive_sound`
 - `adaptive sound`
-- uppercase varianten
+- Uppercase variants
 
-Dit voorkomt model/firmaware mismatch zoals gerapporteerd op Q-series modellen.
+This avoids model/firmware mismatches seen on Q-series devices.
 
-## Local Soundbar API (1516)
+## Local soundbar API (port 1516)
 
-Protocol:
-- HTTPS POST JSON-RPC
-- self-signed cert standaard
-- token creation via `createAccessToken`
+Transport:
+- HTTPS POST JSON-RPC (`https://<host>:1516/`)
+- Self-signed cert in most home setups
 
-Voorbeelden van methods:
+Token/auth flow:
+- `createAccessToken`
+- Token is passed as `AccessToken` for subsequent methods
+
+Core methods:
 - `powerControl`
 - `remoteKeyControl`
 - `inputSelectControl`
 - `soundModeControl`
 - `setAdvancedSoundSettings`
-- getters zoals `getVolume`, `getMute`, `getCodec`, `getIdentifier`
+- getters: `getVolume`, `getMute`, `getCodec`, `getIdentifier`
 
-## Night mode local
+## Night mode local strategy
 
-Night mode probeert:
-1. `setAdvancedSoundSettings` met `nightMode`
-2. fallback app-style event payload (`ms.channel.emit`)
+Night mode tries:
+1. `setAdvancedSoundSettings({nightMode})`
+2. Fallback app-style event (`ms.channel.emit`) payload
 
-## Exposed Local Soundbar Entities
+## Exposed local soundbar entities
 
 - `media_player.soundbar_<ip>`
 - `select` input source / sound mode
 - `switch` power / mute
 - `sensor` codec / identifier
-- optionele diagnostische controls (subwoofer plus/min, etc.)
+- Optional diagnostic controls (subwoofer +/-, etc.)
 
-## Input Source betrouwbaarheid
+## Input source reliability
 
 Cloud:
-- vaak cycle-based (`setNextInputSource`) en niet deterministisch
+- Often cycle-based (`setNextInputSource`) and not deterministic
 
 Local:
-- direct input select methoden geven betere resultaten op ondersteunde modellen
+- Direct source selection methods are more reliable on supported models
 
 ## Troubleshooting
 
 ## 422 / 409 errors
 
-- device state mismatch
-- command unsupported in huidige context
-- device powered off / source locked
+Usually indicate:
+- Device state mismatch
+- Command unsupported in current state
+- Device powered off / source locked
 
 ## 429 Too Many Requests
 
-- verhoog polling interval
-- vermijd rapid-fire automation bursts
-- beperk parallel command streams
+Recommendations:
+- Increase polling interval
+- Avoid rapid command bursts
+- Reduce parallel command paths against same account/token
 
