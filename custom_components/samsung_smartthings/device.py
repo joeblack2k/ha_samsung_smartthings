@@ -349,10 +349,10 @@ class SmartThingsDevice:
             if payload:
                 self._sb_soundmodes = list(payload.get("x.com.samsung.networkaudio.supportedSoundmode") or [])
                 self._sb_soundmode = payload.get("x.com.samsung.networkaudio.soundmode")
-                # Some models return an empty supported list even though commands work.
-                # Build a validated list once from model-aware candidates.
-                if not self._sb_soundmodes:
-                    await self._ensure_validated_soundmode_options()
+            # Some models return an empty/null execute payload while commands still work.
+            # Ensure fallback options are validated/exposed in that case as well.
+            if not self._sb_soundmodes:
+                await self._ensure_validated_soundmode_options()
 
             # Woofer
             payload = await self.execute_query(EXECUTE_WOOFER)
