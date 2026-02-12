@@ -136,7 +136,7 @@ For The Frame, this integration now supports two paths:
 
 #### Cloud soundbar entities
 
-- `media_player`: power/volume/mute/playback basics
+- `media_player`: power/volume/mute + URL playback via SmartThings `audioNotification` (works with Music Assistant)
 - `switch`: power
 - `number`: volume slider
 - `button`: next input source
