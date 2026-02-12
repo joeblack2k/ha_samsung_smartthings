@@ -97,6 +97,10 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
             f |= F.VOLUME_MUTE
         if self.device.has_capability("audioVolume"):
             f |= F.VOLUME_SET | F.VOLUME_STEP
+        # Many Samsung soundbars expose audio playback via SmartThings `audioNotification`.
+        # This is the only reliable way to send an arbitrary stream/URL from HA/MA.
+        if self.device.has_capability("audioNotification"):
+            f |= F.PLAY_MEDIA
         if self.device.has_capability("mediaPlayback"):
             f |= F.PAUSE | F.PLAY | F.STOP
         if self.device.has_capability("mediaTrackControl"):
@@ -194,6 +198,28 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         await self.coordinator.async_request_refresh()
 
     async def async_play_media(self, media_type: str, media_id: str, **kwargs: Any) -> None:
+        # Soundbar / speaker: allow playing a URL via `audioNotification`.
+        if self.device.has_capability("audioNotification"):
+            media_id = str(media_id or "").strip()
+            if not media_id:
+                raise HomeAssistantError("media_id is required")
+            if not is_http_url(media_id):
+                raise HomeAssistantError(
+                    "This device only supports URL playback via SmartThings audioNotification. "
+                    "Provide a http(s) URL."
+                )
+
+            # Use playTrackAndResume so we don't permanently break current playback/source.
+            # Best-effort: wake the soundbar first if it exposes a power switch.
+            if self.device.has_capability("switch"):
+                sw = self.device.get_attr("switch", "switch")
+                if sw in ("off", False):
+                    await self.device.send_command("switch", "on", arguments=None)
+
+            await self.device.send_command("audioNotification", "playTrackAndResume", arguments=[media_id])
+            await self.coordinator.async_request_refresh()
+            return
+
         if not self.device.has_capability("custom.launchapp"):
             raise HomeAssistantError("App launch is not supported on this TV via SmartThings")
         media_id = str(media_id or "").strip()
