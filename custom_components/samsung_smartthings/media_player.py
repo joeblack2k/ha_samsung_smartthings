@@ -263,6 +263,16 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
         raise HomeAssistantError("Unsupported media item for SmartThings TV")
 
     @property
+    def media_title(self) -> str | None:
+        title, _artist = self.device.get_media_metadata()
+        return title
+
+    @property
+    def media_artist(self) -> str | None:
+        _title, artist = self.device.get_media_metadata()
+        return artist
+
+    @property
     def source_list(self) -> list[str]:
         if not self.device.has_capability("custom.launchapp"):
             return []
