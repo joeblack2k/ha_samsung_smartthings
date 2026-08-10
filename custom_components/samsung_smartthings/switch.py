@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -12,8 +15,20 @@ from aiohttp import ClientResponseError
 from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_FRAME_LOCAL, ENTRY_TYPE_SOUNDBAR_LOCAL
 from .coordinator import SmartThingsCoordinator
 from .entity_base import SamsungSmartThingsEntity
-from .frame_local_api import AsyncFrameLocal, FrameLocalError, FrameLocalUnsupportedError
+from .frame_local_api import (
+    AsyncFrameLocal,
+    FrameLocalConnectionError,
+    FrameLocalError,
+    FrameLocalUnsupportedError,
+)
 from .soundbar_local_api import AsyncSoundbarLocal
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _is_smartthings_invalid_device_state(err: ClientResponseError) -> bool:
+    """Return True for transient SmartThings command conflicts."""
+    return err.status == 409 and "invalid device state" in str(err).lower()
 
 
 async def async_setup_entry(
@@ -28,7 +43,7 @@ async def async_setup_entry(
         host = domain.get("host") or "frame"
         async_add_entities(
             [
-                FrameLocalArtModeSwitch(coordinator, frame, host),
+                FrameLocalArtModeSwitch(hass, coordinator, frame, host),
                 FrameLocalBrightnessSensorSwitch(coordinator, frame, host),
             ]
         )
@@ -84,17 +99,24 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         try:
             await self.device.send_command("switch", "on", arguments=None)
-        except ClientResponseError:
+        except ClientResponseError as err:
             # Some TVs cannot be powered on via the SmartThings cloud switch command.
-            # Best-effort fallback: send a POWER key via remoteControl (toggle).
-            if self.device.has_capability("samsungvd.remoteControl"):
+            # Best-effort fallback: HOME is accepted by this capability and wakes most TVs.
+            if not self.device.is_frame_tv() or not self.device.has_capability("samsungvd.remoteControl"):
+                raise
+            try:
                 await self.device.send_command(
                     "samsungvd.remoteControl",
                     "send",
-                    arguments=["POWER", "PRESS_AND_RELEASED"],
+                    arguments=["HOME", "PRESS_AND_RELEASED"],
                 )
-            else:
-                raise
+            except ClientResponseError as fallback_err:
+                if not _is_smartthings_invalid_device_state(fallback_err):
+                    raise
+                _LOGGER.info(
+                    "SmartThings refused Frame TV wake because the TV is in a transient invalid state: %s",
+                    fallback_err,
+                )
         finally:
             await self.coordinator.async_request_refresh()
 
@@ -102,14 +124,9 @@ class SamsungSmartThingsPowerSwitch(SamsungSmartThingsEntity, SwitchEntity):
         try:
             await self.device.send_command("switch", "off", arguments=None)
         except ClientResponseError:
-            if self.device.has_capability("samsungvd.remoteControl"):
-                await self.device.send_command(
-                    "samsungvd.remoteControl",
-                    "send",
-                    arguments=["POWER", "PRESS_AND_RELEASED"],
-                )
-            else:
-                raise
+            # This TV capability does not expose a valid POWER remote key, so do not
+            # send a wake-style fallback when the requested action is power off.
+            raise
         finally:
             await self.coordinator.async_request_refresh()
 
@@ -324,10 +341,21 @@ class _FrameLocalSwitch(SwitchEntity):
     def available(self) -> bool:
         return self._coordinator.last_update_success and bool(self._coordinator.data.get("online", False))
 
+    async def _mark_temporarily_offline(self, err: Exception) -> None:
+        _LOGGER.info("Frame TV %s local API is temporarily unreachable: %s", self._host, err)
+        self._coordinator.data = {
+            **(self._coordinator.data or {}),
+            "online": False,
+            "last_errors": [f"local_api_unreachable: {err}"],
+        }
+        self.async_write_ha_state()
+        await self._coordinator.async_request_refresh()
+
 
 class FrameLocalArtModeSwitch(_FrameLocalSwitch):
-    def __init__(self, coordinator, frame: AsyncFrameLocal, host: str) -> None:
+    def __init__(self, hass: HomeAssistant, coordinator, frame: AsyncFrameLocal, host: str) -> None:
         super().__init__(coordinator, frame, host, "art_mode", "Art Mode")
+        self._hass = hass
         self._attr_icon = "mdi:image-frame"
 
     @property
@@ -344,21 +372,86 @@ class FrameLocalArtModeSwitch(_FrameLocalSwitch):
         supported = self._coordinator.data.get("supports_art_mode")
         return supported is not False
 
+    def _cloud_entity(self, domain: str, *needles: str) -> str | None:
+        candidates: list[tuple[int, str]] = []
+        for entity_id in self._hass.states.async_entity_ids(domain):
+            state = self._hass.states.get(entity_id)
+            name = str((state.attributes if state else {}).get("friendly_name", "")).lower()
+            if all(needle in name for needle in needles):
+                # The local entries have two Frame TVs. Prefer the known
+                # living-room cloud entity for .172; never select the first
+                # matching entity by registry order.
+                score = 1 if self._host == "192.168.2.172" and "65" in name else 0
+                candidates.append((score, entity_id))
+        if not candidates:
+            return None
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+
+    async def _cloud_fallback(self, enabled: bool) -> bool:
+        if enabled:
+            entity_id = self._cloud_entity("button", "frame", "art mode")
+            if not entity_id:
+                return False
+            state = self._hass.states.get(entity_id)
+            if state is None or state.state in ("unavailable", "unknown"):
+                return False
+            try:
+                await asyncio.wait_for(
+                    self._hass.services.async_call(
+                        "button", "press", {"entity_id": entity_id}, blocking=True
+                    ),
+                    timeout=5,
+                )
+            except Exception:
+                return False
+            return True
+
+        entity_id = self._cloud_entity("remote", "frame")
+        if not entity_id:
+            return False
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state in ("unavailable", "unknown"):
+            return False
+        try:
+            await asyncio.wait_for(
+                self._hass.services.async_call(
+                    "remote",
+                    "send_command",
+                    {"entity_id": entity_id, "command": "HOME"},
+                    blocking=True,
+                ),
+                timeout=5,
+            )
+        except Exception:
+            return False
+        return True
+
     async def async_turn_on(self, **kwargs) -> None:
         try:
             await self._frame.set_art_mode(True)
-        except FrameLocalUnsupportedError as err:
-            raise HomeAssistantError("Art mode control is not supported on this Frame TV.") from err
+        except (FrameLocalUnsupportedError, FrameLocalConnectionError, TimeoutError) as err:
+            if await self._cloud_fallback(True):
+                self._hass.async_create_task(self._coordinator.async_request_refresh())
+                return
         except FrameLocalError as err:
+            if await self._cloud_fallback(True):
+                self._hass.async_create_task(self._coordinator.async_request_refresh())
+                return
             raise HomeAssistantError(f"Failed to turn art mode on: {err}") from err
         await self._coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
         try:
             await self._frame.set_art_mode(False)
-        except FrameLocalUnsupportedError as err:
-            raise HomeAssistantError("Art mode control is not supported on this Frame TV.") from err
+        except (FrameLocalUnsupportedError, FrameLocalConnectionError, TimeoutError) as err:
+            if await self._cloud_fallback(False):
+                self._hass.async_create_task(self._coordinator.async_request_refresh())
+                return
         except FrameLocalError as err:
+            if await self._cloud_fallback(False):
+                self._hass.async_create_task(self._coordinator.async_request_refresh())
+                return
             raise HomeAssistantError(f"Failed to turn art mode off: {err}") from err
         await self._coordinator.async_request_refresh()
 

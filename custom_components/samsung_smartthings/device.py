@@ -140,17 +140,6 @@ class SmartThingsDevice:
             return None
         return node.get("value")
 
-    def find_attr(self, attr: str, *, component: str = "main") -> Any:
-        """Find an attribute value across all capabilities in a component."""
-        comp = self._component(component)
-        for cap in comp.values():
-            if not isinstance(cap, dict):
-                continue
-            node = cap.get(attr)
-            if isinstance(node, dict) and "value" in node:
-                return node.get("value")
-        return None
-
     def get_attr_unit(self, cap_id: str, attr: str, *, component: str = "main") -> str | None:
         cap = self._component(component).get(cap_id)
         if not isinstance(cap, dict):
@@ -160,44 +149,6 @@ class SmartThingsDevice:
             return None
         u = node.get("unit")
         return u if isinstance(u, str) else None
-
-    def get_media_metadata(self) -> tuple[str | None, str | None]:
-        """Best-effort extraction of title/artist from SmartThings status payload."""
-        track = (
-            self.find_attr("audioTrackData")
-            or self.find_attr("musicTrack")
-            or self.find_attr("trackData")
-        )
-
-        title: str | None = None
-        artist: str | None = None
-
-        if isinstance(track, str):
-            try:
-                parsed = json.loads(track)
-            except Exception:
-                parsed = None
-            if isinstance(parsed, dict):
-                track = parsed
-
-        if isinstance(track, dict):
-            raw_title = track.get("title") or track.get("trackTitle") or track.get("name")
-            raw_artist = track.get("artist") or track.get("artistName")
-            if isinstance(raw_title, str) and raw_title.strip():
-                title = raw_title.strip()
-            if isinstance(raw_artist, str) and raw_artist.strip():
-                artist = raw_artist.strip()
-
-        if title is None:
-            raw_title = self.find_attr("title")
-            if isinstance(raw_title, str) and raw_title.strip():
-                title = raw_title.strip()
-        if artist is None:
-            raw_artist = self.find_attr("artist")
-            if isinstance(raw_artist, str) and raw_artist.strip():
-                artist = raw_artist.strip()
-
-        return title, artist
 
     def flatten_attributes(self) -> list[tuple[str, str, str, Any, str | None]]:
         """Return [(component, capability, attribute, value, unit)] for all components."""
@@ -314,7 +265,7 @@ class SmartThingsDevice:
                 return
             except ClientResponseError as exc:
                 # Many Frame TVs return 422 NOT_FOUND even though the capability exists.
-                if exc.status in (400, 404, 422):
+                if exc.status in (400, 404, 409, 422):
                     pass
                 else:
                     raise
@@ -326,7 +277,7 @@ class SmartThingsDevice:
                     await self.send_command("custom.launchapp", "launchApp", arguments=[None, name])
                     return
                 except ClientResponseError as exc:
-                    if exc.status in (400, 404, 422):
+                    if exc.status in (400, 404, 409, 422):
                         continue
                     raise
 
