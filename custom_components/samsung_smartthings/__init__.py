@@ -1238,11 +1238,25 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         if not base.is_dir():
             raise ValueError(f"Invalid folder: {folder}")
 
-        if recursive:
-            files = [p for p in base.rglob("*") if p.is_file()]
-        else:
-            files = [p for p in base.iterdir() if p.is_file()]
-        files = [p for p in files if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
+        # Avoid blocking the event loop with filesystem scanning.
+        def _scan() -> list[Path]:
+            if recursive:
+                found = [p for p in base.rglob("*") if p.is_file()]
+            else:
+                found = [p for p in base.iterdir() if p.is_file()]
+            # Skip dotfiles/AppleDouble files, keep only supported image extensions.
+            out = []
+            for p in found:
+                name = p.name
+                if name.startswith("."):
+                    continue
+                if name.startswith("._"):
+                    continue
+                if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                    out.append(p)
+            return out
+
+        files = await hass.async_add_executor_job(_scan)
 
         store: Store = hass.data.setdefault(DOMAIN, {}).setdefault(FRAME_SYNC_STORE_KEY, Store(hass, FRAME_SYNC_STORE_VERSION, FRAME_SYNC_STORE_KEY))
         payload = await store.async_load() or {}
@@ -1250,16 +1264,22 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         mapping = per_entry.setdefault("files", {})
 
         local_paths: set[str] = set()
+        errors: list[str] = []
         for path in files:
             p = str(path)
             local_paths.add(p)
-            sha = frame.file_sha256(p)
-            mtime = frame.file_mtime(p)
+            # Hash/mtime are blocking operations: run in executor.
+            sha, mtime = await hass.async_add_executor_job(lambda: (frame.file_sha256(p), frame.file_mtime(p)))
             prev = mapping.get(p) if isinstance(mapping, dict) else None
             if isinstance(prev, dict) and prev.get("sha256") == sha and int(prev.get("mtime", -1)) == mtime and prev.get("content_id"):
                 continue
-            cid = await frame.upload_artwork(p)
-            mapping[p] = {"content_id": cid, "sha256": sha, "mtime": mtime}
+            try:
+                cid = await frame.upload_artwork(p)
+                mapping[p] = {"content_id": cid, "sha256": sha, "mtime": mtime}
+            except FrameLocalUnsupportedError as err:
+                errors.append(f"upload unsupported for {p}: {err}")
+            except FrameLocalError as err:
+                errors.append(f"upload failed for {p}: {err}")
 
         if delete_orphans:
             orphan_ids: list[str] = []
@@ -1274,6 +1294,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
         await store.async_save(payload)
         await coordinator.async_request_refresh()
+        if errors and not mapping:
+            raise HomeAssistantError("Frame sync failed: " + "; ".join(errors))
 
     async def _frame_set_slideshow(call) -> None:
         _entry_id, frame, coordinator = await _resolve_frame_local(call)
@@ -1410,10 +1432,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         async def _update() -> dict:
             try:
-                return await frame.get_state()
+                return await asyncio.wait_for(
+                    frame.get_state(coordinator.data),
+                    timeout=20,
+                )
             except FrameLocalError as err:
+                # Keep the local entities usable when Samsung's Art
+                # handshake fails but the TV still accepts a TCP connection.
+                # Art values remain last-known/unknown; availability reflects
+                # the LAN transport instead of one optional API call.
+                if await frame.is_reachable():
+                    previous = coordinator.data if isinstance(coordinator.data, dict) else {}
+                    return {
+                        **previous,
+                        "online": True,
+                        "transport": "tcp_only",
+                        "art_api_available": False,
+                        "last_errors": [f"art_api: {err}"],
+                    }
                 raise UpdateFailed(err) from err
             except Exception as err:
+                if await frame.is_reachable():
+                    previous = coordinator.data if isinstance(coordinator.data, dict) else {}
+                    return {
+                        **previous,
+                        "online": True,
+                        "transport": "tcp_only",
+                        "art_api_available": False,
+                        "last_errors": [f"unexpected: {err}"],
+                    }
                 raise UpdateFailed(str(err)) from err
 
         coordinator = DataUpdateCoordinator(
@@ -1423,11 +1470,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             update_method=_update,
             update_interval=timedelta(seconds=DEFAULT_LOCAL_FRAME_POLL_INTERVAL),
         )
-        coordinator.data = {"online": False, "last_errors": ["not_initialized"]}
-        try:
-            await coordinator.async_refresh()
-        except Exception:
-            _LOGGER.debug("[%s] frame local first refresh failed for %s", DOMAIN, host, exc_info=True)
+        coordinator.data = {
+            "online": True,
+            "transport": "starting",
+            "art_api_available": False,
+            "last_errors": ["initial_refresh_pending"],
+        }
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = {
@@ -1438,6 +1486,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
 
         await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "switch", "select", "number", "sensor"])
+
         return True
 
     # ---- Soundbar Local (LAN) entry type ----
@@ -1468,7 +1517,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             update_method=_update,
             update_interval=timedelta(seconds=DEFAULT_LOCAL_SOUNDBAR_POLL_INTERVAL),
         )
-        await coordinator.async_config_entry_first_refresh()
+        coordinator.data = {}
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = {
@@ -1480,6 +1529,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Local mode supports a curated subset of entities on top of media_player.
         await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "sensor", "switch", "select", "button"])
+
+        async def _first_soundbar_refresh() -> None:
+            """Refresh without blocking HA startup on an unreachable soundbar."""
+            try:
+                await coordinator.async_refresh()
+            except Exception as err:
+                _LOGGER.debug("[%s] soundbar local first refresh failed for %s: %s", DOMAIN, host, err)
+
+        hass.async_create_task(_first_soundbar_refresh())
         return True
 
     st_entry_id = entry.data.get(CONF_SMARTTHINGS_ENTRY_ID)

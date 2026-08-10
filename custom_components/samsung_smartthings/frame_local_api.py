@@ -5,11 +5,17 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
+
 class FrameLocalError(Exception):
     """Raised when local Frame TV operations fail."""
+
+
+class FrameLocalConnectionError(FrameLocalError):
+    """Raised when the Frame TV local API is temporarily unreachable."""
 
 
 class FrameLocalUnsupportedError(FrameLocalError):
@@ -42,6 +48,30 @@ def _as_list(value: Any) -> list[Any]:
     return []
 
 
+def _open_art_channel_resilient(art: Any) -> Any:
+    """Open Art API while ignoring Samsung's existing-client notifications."""
+    from samsungtvws.connection import SamsungTVWSConnection
+    from samsungtvws.event import (
+        MS_CHANNEL_CLIENT_CONNECT_EVENT,
+        MS_CHANNEL_CLIENT_DISCONNECT_EVENT,
+        MS_CHANNEL_READY_EVENT,
+    )
+    from samsungtvws.exceptions import ConnectionFailure
+
+    SamsungTVWSConnection.open(art)
+    while True:
+        event, frame = art._recv_frame()
+        if event in (
+            MS_CHANNEL_CLIENT_CONNECT_EVENT,
+            MS_CHANNEL_CLIENT_DISCONNECT_EVENT,
+        ):
+            continue
+        if event != MS_CHANNEL_READY_EVENT:
+            art.close()
+            raise ConnectionFailure(frame)
+        return art.connection
+
+
 class AsyncFrameLocal:
     """Async-safe wrapper around samsungtvws art API."""
 
@@ -59,11 +89,23 @@ class AsyncFrameLocal:
         self._host = host
         self._ws_port = ws_port
         self._timeout = timeout
+        # samsungtvws can occasionally hang beyond its socket timeout depending on TV state.
+        # Use a hard wall-clock timeout to avoid blocking the coordinator forever.
+        self._hard_timeout = max(int(timeout) + 5, 15)
         self._ws_name = ws_name
         self._token_file = token_file
         self._lock = asyncio.Lock()
         self._active_port: int | None = None
         self._unsupported_methods: set[str] = set()
+        self._unsupported_tv_methods: set[str] = set()
+        # The Frame REST endpoint can remain healthy while the Art WebSocket
+        # stops answering (this is common on newer Frame firmware).  Do not
+        # reconnect to a wedged Art channel on every 20-second coordinator
+        # poll; retry it periodically while keeping REST reachability alive.
+        self._art_api_available: bool | None = None
+        self._last_art_probe = 0.0
+        self._art_probe_interval = 60.0
+        self._offline_grace_cycles = 3
 
     @property
     def host(self) -> str:
@@ -97,9 +139,11 @@ class AsyncFrameLocal:
                 "cannot connect",
                 "connect call failed",
                 "timed out",
+                "host is unreachable",
                 "host is down",
                 "no route to host",
                 "connection refused",
+                "network is unreachable",
                 "websocket",
                 "clientdisconnect",
             )
@@ -135,13 +179,30 @@ class AsyncFrameLocal:
         # `-1` is typically returned when the command is unsupported on this model.
         if code == -1 and method in {"set_motion_sensitivity", "set_motion_timer", "set_brightness_sensor_setting"}:
             return True
+        # Observed in the field:
+        # - `get_thumbnail_list` can return -6 on some firmware profiles (treat as unsupported; fall back to current only).
+        if code == -6 and method == "get_thumbnail_list":
+            return True
+        # - `set_slideshow_status` can return -7 on models that don't expose slideshow control.
+        if code == -7 and method == "set_slideshow_status":
+            return True
+        # - `delete_list` can return -10 even when individual delete works.
+        if code == -10 and method == "delete_list":
+            return True
         return False
 
     async def _call(self, fn, *args, **kwargs):
         async with self._lock:
-            return await self._hass.async_add_executor_job(lambda: fn(*args, **kwargs))
+            job = self._hass.async_add_executor_job(lambda: fn(*args, **kwargs))
+            try:
+                return await asyncio.wait_for(job, timeout=self._hard_timeout)
+            except asyncio.TimeoutError as err:
+                raise TimeoutError(f"Frame local call hard-timeout after {self._hard_timeout}s") from err
 
     async def _tv_call(self, method: str, *args, **kwargs):
+        if method in self._unsupported_tv_methods:
+            raise FrameLocalUnsupportedError(f"{method} is unavailable/unauthorized on this Frame TV")
+
         last_err: Exception | None = None
         ports = self._candidate_ports(include_alternates=True)
         for port in ports:
@@ -153,6 +214,13 @@ class AsyncFrameLocal:
                 return value
             except Exception as err:
                 last_err = err
+                # Apps/remote methods require a separate websocket auth/pairing on many TVs.
+                # When not authorized, samsungtvws raises UnauthorizedError with event ms.channel.unauthorized.
+                if "ms.channel.unauthorized" in str(err).lower():
+                    self._unsupported_tv_methods.add(method)
+                    raise FrameLocalUnsupportedError(
+                        f"{method} unauthorized. Approve pairing on the TV for remote control features."
+                    ) from err
                 if not self._is_connection_error(err):
                     raise FrameLocalError(str(err)) from err
             finally:
@@ -161,7 +229,7 @@ class AsyncFrameLocal:
                 except Exception:
                     pass
         if last_err is not None:
-            raise FrameLocalError(str(last_err)) from last_err
+            raise FrameLocalConnectionError(str(last_err)) from last_err
         raise FrameLocalError("Unknown frame local error")
 
     async def _art_call(self, method: str, *args, **kwargs):
@@ -186,6 +254,11 @@ class AsyncFrameLocal:
                 tv = self._tv(port)
                 art = tv.art()
                 try:
+                    # samsungtvws 3.0.3 treats clientConnect/clientDisconnect
+                    # notifications from other Art clients as a failed
+                    # handshake. On Frame firmware these events are normal;
+                    # drain them until the channel-ready event arrives.
+                    art.open = lambda: _open_art_channel_resilient(art)
                     fn = getattr(art, method)
                     value = await self._call(fn, *args, **kwargs)
                     self._active_port = port
@@ -206,7 +279,7 @@ class AsyncFrameLocal:
                     except Exception:
                         pass
         if last_err is not None:
-            raise FrameLocalError(str(last_err)) from last_err
+            raise FrameLocalConnectionError(str(last_err)) from last_err
         raise FrameLocalError("Unknown frame local error")
 
     async def ping(self) -> bool:
@@ -215,6 +288,27 @@ class AsyncFrameLocal:
             return True
         except Exception:
             return False
+
+    async def is_reachable(self) -> bool:
+        """Return whether a Samsung local API port accepts TCP connections.
+
+        Samsung can leave the Art WebSocket handshake hanging while the TV is
+        still on the LAN. Availability must not depend on that protocol-level
+        handshake; Art reads remain best-effort below.
+        """
+        for port in self._candidate_ports(include_alternates=True):
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(self._host, port),
+                    timeout=3,
+                )
+                writer.close()
+                await writer.wait_closed()
+                self._active_port = port
+                return True
+            except Exception:
+                continue
+        return False
 
     async def get_api_version(self) -> str | None:
         value = await self._art_call("get_api_version")
@@ -233,9 +327,17 @@ class AsyncFrameLocal:
     async def set_art_mode(self, enabled: bool) -> None:
         target = "on" if enabled else "off"
         try:
-            await self._art_call("set_artmode", enabled)
+            # The Art channel can accept TCP and then never complete its
+            # protocol handshake. Commands must fail fast so a cloud fallback
+            # can keep the user-facing flow responsive.
+            await asyncio.wait_for(
+                self._art_call("set_artmode", enabled),
+                timeout=8,
+            )
             return
-        except FrameLocalUnsupportedError:
+        except (FrameLocalUnsupportedError, TimeoutError, asyncio.TimeoutError):
+            raise
+        except FrameLocalConnectionError:
             raise
         except FrameLocalError:
             # Some firmware applies the change even if websocket times out.
@@ -246,7 +348,10 @@ class AsyncFrameLocal:
             except Exception:
                 pass
             # Retry with explicit "on/off" string for models that dislike bool payloads.
-            await self._art_call("set_artmode", target)
+            await asyncio.wait_for(
+                self._art_call("set_artmode", target),
+                timeout=8,
+            )
 
     async def get_brightness(self) -> float | None:
         value = await self._art_call("get_brightness")
@@ -269,7 +374,11 @@ class AsyncFrameLocal:
         return {}
 
     async def list_artworks(self) -> list[dict[str, Any]]:
-        data = await self._art_call("get_thumbnail_list")
+        try:
+            data = await self._art_call("get_thumbnail_list")
+        except FrameLocalUnsupportedError:
+            # Some Frame firmware only returns the active artwork id and no thumbnail list.
+            return []
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)]
         if isinstance(data, dict):
@@ -297,18 +406,63 @@ class AsyncFrameLocal:
         portrait_matte: str = "shadowbox_polar",
         file_type: str | None = None,
     ) -> str:
+        upload_path = path
         upload_type = file_type
+        cleanup_path: str | None = None
+
         if not upload_type:
-            ext = Path(path).suffix.lower().lstrip(".")
-            upload_type = ext or "jpg"
-        content_id = await self._art_call(
+            ext = Path(path).suffix.lower()
+            if ext in (".jpg", ".jpeg"):
+                upload_type = "jpg"
+            elif ext == ".png":
+                # Many Frame firmwares reject PNG uploads with error -1. Convert to JPEG when possible.
+                try:
+                    from PIL import Image  # type: ignore
+                except Exception:
+                    raise FrameLocalError("PNG upload not supported on this TV without Pillow; convert to JPG") from None
+
+                tmp = Path(tempfile.gettempdir()) / f"frame_upload_{os.getpid()}_{int(asyncio.get_running_loop().time()*1000)}.jpg"
+                img = Image.open(path)
+                # Ensure compatible JPEG mode.
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                img.save(tmp, format="JPEG", quality=92, optimize=True)
+                upload_path = str(tmp)
+                upload_type = "jpg"
+                cleanup_path = upload_path
+            elif ext == ".webp":
+                # WebP is not reliably accepted by Frame local API; best-effort convert to JPEG.
+                try:
+                    from PIL import Image  # type: ignore
+                except Exception:
+                    raise FrameLocalError("WebP upload not supported on this TV without Pillow; convert to JPG") from None
+
+                tmp = Path(tempfile.gettempdir()) / f"frame_upload_{os.getpid()}_{int(asyncio.get_running_loop().time()*1000)}.jpg"
+                img = Image.open(path)
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                img.save(tmp, format="JPEG", quality=92, optimize=True)
+                upload_path = str(tmp)
+                upload_type = "jpg"
+                cleanup_path = upload_path
+            else:
+                upload_type = ext.lstrip(".") or "jpg"
+
+        try:
+            content_id = await self._art_call(
             "upload",
-            path,
+            upload_path,
             matte,
             portrait_matte,
             upload_type,
             None,
         )
+        finally:
+            if cleanup_path:
+                try:
+                    Path(cleanup_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
         if not isinstance(content_id, str) or not content_id:
             raise FrameLocalError("Upload succeeded but no content_id returned")
         return content_id
@@ -320,8 +474,18 @@ class AsyncFrameLocal:
     async def delete_artwork_list(self, content_ids: list[str]) -> bool:
         if not content_ids:
             return True
-        result = await self._art_call("delete_list", content_ids)
-        return bool(result)
+        try:
+            result = await self._art_call("delete_list", content_ids)
+            return bool(result)
+        except FrameLocalUnsupportedError:
+            # Some models reject delete_list (-10) even when single delete works.
+            ok = True
+            for cid in content_ids:
+                try:
+                    await self.delete_artwork(cid)
+                except Exception:
+                    ok = False
+            return ok
 
     async def get_matte_options(self) -> list[str]:
         data = await self._art_call("get_matte_list")
@@ -419,56 +583,103 @@ class AsyncFrameLocal:
     async def open_url(self, url: str) -> None:
         await self._tv_call("open_browser", str(url))
 
-    async def get_state(self) -> dict[str, Any]:
-        api_version = None
-        art_mode = None
-        current = {}
-        brightness = None
-        art_ids: list[str] = []
-        matte_options: list[str] = []
-        filter_options: list[str] = []
-        slideshow = {}
-        artmode_settings: list[str] = []
-        online = False
+    async def get_state(self, previous: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Read Frame state without coupling availability to Art WebSocket health.
+
+        The REST endpoint is a fast, reliable liveness signal.  Art commands
+        are best-effort because the Art WebSocket is a separate Samsung
+        service and can become a zombie channel.  When that happens, retain
+        the last known Art values and retry the channel on a slow cadence.
+        """
+        previous = previous if isinstance(previous, dict) else {}
+
+        def _previous(key: str, default: Any) -> Any:
+            return previous[key] if key in previous else default
+
+        api_version = _previous("api_version", None)
+        art_mode = _previous("art_mode", None)
+        current = _previous("current_artwork_payload", {})
+        if not isinstance(current, dict):
+            current = {}
+        brightness = _previous("brightness", None)
+        art_ids = list(_previous("artwork_ids", [])) if isinstance(_previous("artwork_ids", []), list) else []
+        matte_options = list(_previous("matte_options", [])) if isinstance(_previous("matte_options", []), list) else []
+        filter_options = list(_previous("photo_filter_options", [])) if isinstance(_previous("photo_filter_options", []), list) else []
+        slideshow = _previous("slideshow", {})
+        if not isinstance(slideshow, dict):
+            slideshow = {}
+        artmode_settings = list(_previous("artmode_settings", [])) if isinstance(_previous("artmode_settings", []), list) else []
+        online = await self.is_reachable()
+        probe_offline = not online
         errors: list[str] = []
+        art_api_available = self._art_api_available is True
+        offline_cycles = int(previous.get("offline_cycles", 0) or 0)
 
-        try:
-            api_version = await self.get_api_version()
-            online = True
-        except Exception as err:
-            errors.append(f"api_version: {err}")
-
-        if online:
-            for label, fn in (
-                ("art_mode", self.get_art_mode),
-                ("current_artwork", self.get_current_artwork),
-                ("brightness", self.get_brightness),
-                ("artworks", self.list_artwork_ids),
-                ("matte", self.get_matte_options),
-                ("photo_filter", self.get_photo_filter_options),
-                ("slideshow", self.get_slideshow_status),
-                ("artmode_settings", self.get_artmode_settings),
-            ):
+        if not online:
+            errors.append("rest_api: TV REST endpoint is unreachable")
+            self._art_api_available = False
+            offline_cycles += 1
+            # A short TCP/WebSocket interruption is common while a Frame
+            # changes power/art state. Keep the last known state available for
+            # a few polls so automations do not power-cycle a healthy TV.
+            if previous.get("online") is True and offline_cycles <= self._offline_grace_cycles:
+                online = True
+        else:
+            offline_cycles = 0
+            now = asyncio.get_running_loop().time()
+            should_probe_art = (
+                self._art_api_available is not False
+                or now - self._last_art_probe >= self._art_probe_interval
+            )
+            if should_probe_art:
+                self._last_art_probe = now
                 try:
-                    value = await fn()
-                    if label == "art_mode":
-                        art_mode = value
-                    elif label == "current_artwork" and isinstance(value, dict):
-                        current = value
-                    elif label == "brightness":
-                        brightness = value
-                    elif label == "artworks" and isinstance(value, list):
-                        art_ids = value
-                    elif label == "matte" and isinstance(value, list):
-                        matte_options = value
-                    elif label == "photo_filter" and isinstance(value, list):
-                        filter_options = value
-                    elif label == "slideshow" and isinstance(value, dict):
-                        slideshow = value
-                    elif label == "artmode_settings" and isinstance(value, list):
-                        artmode_settings = value
+                    api_version = await self.get_api_version()
+                    art_api_available = True
+                    self._art_api_available = True
                 except Exception as err:
-                    errors.append(f"{label}: {err}")
+                    # Keep LAN availability independent from the optional Art
+                    # handshake. The TCP port is healthy even when this
+                    # protocol probe times out or returns a clientConnect
+                    # event instead of a version reply.
+                    art_api_available = False
+                    self._art_api_available = False
+                    errors.append(f"art_api_version: {err}")
+
+            # Avoid a long series of WebSocket timeouts when the channel is
+            # unhealthy.  Values from the last successful Art poll remain in
+            # the coordinator data until the next successful probe.
+            if art_api_available:
+                for label, fn in (
+                    ("art_mode", self.get_art_mode),
+                    ("current_artwork", self.get_current_artwork),
+                    ("brightness", self.get_brightness),
+                    ("artworks", self.list_artwork_ids),
+                    ("matte", self.get_matte_options),
+                    ("photo_filter", self.get_photo_filter_options),
+                    ("slideshow", self.get_slideshow_status),
+                    ("artmode_settings", self.get_artmode_settings),
+                ):
+                    try:
+                        value = await fn()
+                        if label == "art_mode":
+                            art_mode = value
+                        elif label == "current_artwork" and isinstance(value, dict):
+                            current = value
+                        elif label == "brightness":
+                            brightness = value
+                        elif label == "artworks" and isinstance(value, list):
+                            art_ids = value
+                        elif label == "matte" and isinstance(value, list):
+                            matte_options = value
+                        elif label == "photo_filter" and isinstance(value, list):
+                            filter_options = value
+                        elif label == "slideshow" and isinstance(value, dict):
+                            slideshow = value
+                        elif label == "artmode_settings" and isinstance(value, list):
+                            artmode_settings = value
+                    except Exception as err:
+                        errors.append(f"{label}: {err}")
 
         current_id = current.get("content_id") or current.get("contentId")
         current_filter = current.get("filter_id") or current.get("filterId")
@@ -486,6 +697,17 @@ class AsyncFrameLocal:
         return {
             "online": online,
             "api_version": api_version,
+            "art_api_available": art_api_available,
+            "transport": (
+                "offline_grace"
+                if probe_offline and online
+                else "art_websocket"
+                if art_api_available
+                else "rest_only"
+                if online
+                else "offline"
+            ),
+            "offline_cycles": offline_cycles,
             "art_mode": art_mode,
             "current_artwork_id": current_id if isinstance(current_id, str) else None,
             "current_filter": current_filter if isinstance(current_filter, str) else None,
