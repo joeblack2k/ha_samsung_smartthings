@@ -1,0 +1,11 @@
+{
+    "bluetooth": {
+        "sbMode": 4
+    },
+    "digital": {
+        "sbMode": 1
+    },
+    "wifi": {
+        "sbMode": 26
+    }
+}

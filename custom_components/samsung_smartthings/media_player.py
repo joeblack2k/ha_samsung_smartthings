@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-
+import logging
 from homeassistant.components.media_player import (
     BrowseMedia,
     MediaClass,
@@ -31,7 +33,7 @@ from .frame_local_api import AsyncFrameLocal
 from .soundbar_local_api import AsyncSoundbarLocal
 from .app_catalog import YOUTUBE_APP, app_options, is_http_url, is_youtube_url, resolve_app
 
-
+_LOGGER = logging.getLogger(__name__)
 class _FeatureMask(int):
     """Int mask that also supports `feature in mask` membership checks."""
 
@@ -87,6 +89,9 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
             self._attr_device_class = MediaPlayerDeviceClass.TV
         else:
             self._attr_device_class = MediaPlayerDeviceClass.SPEAKER
+            #Variables used to map source names to source IDs
+            config_dir = os.path.dirname(__file__)
+            self._source_maps_dir = os.path.join(config_dir, "source_maps")
 
     @property
     def supported_features(self) -> int:
@@ -107,6 +112,8 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
             f |= F.NEXT_TRACK | F.PREVIOUS_TRACK
         if self.device.has_capability("custom.launchapp"):
             f |= F.PLAY_MEDIA | F.SELECT_SOURCE
+        if not self.device.has_capability("custom.launchapp") and self.device.has_capability("samsungvd.audioInputSource"):
+            f |= F.SELECT_SOURCE 
         # Source selection is handled via select entity; keep here minimal.
         return _FeatureMask(f)
 
@@ -271,20 +278,182 @@ class SamsungSmartThingsMediaPlayer(SamsungSmartThingsEntity, MediaPlayerEntity)
     def media_artist(self) -> str | None:
         _title, artist = self.device.get_media_metadata()
         return artist
+    @property
+    def source(self) -> str | None:
+        if self.device.has_capability("samsungvd.audioInputSource"):
+            if getattr(self, "_source_maps_dir", None) is not None:
+                self.hass.async_create_task(self.async_update_source_map())
+            v = self.device.get_attr("samsungvd.audioInputSource", "inputSource")
+            return str(v) if v is not None else None
 
+        return None
+    
     @property
     def source_list(self) -> list[str]:
-        if not self.device.has_capability("custom.launchapp"):
-            return []
-        return app_options()
+        if self.device.has_capability("custom.launchapp"):
+            return app_options()
+            
+        if self.device.has_capability("samsungvd.audioInputSource"):
+            raw_sources = self.device.get_attr("samsungvd.audioInputSource", "supportedInputSources")
+            
+            if isinstance(raw_sources, list):
+                sources = [str(s) for s in raw_sources]
+                
+                # NOTE FOR MAINTAINER REGARDING BLUETOOTH EDGE CASE:
+                # Some Samsung soundbars freeze their SmartThings API telemetry when on Bluetooth.
+                # If the integration is reloaded while the device is on Bluetooth, it can cause 
+                # the media_player entity to initialize as 'unavailable' until switched back to HDMI/Wifi.
+                # 
+                # Only half fix i could think of was removing it from the list, but its not good production code so i left it like this, 
+                #
+                # if "bluetooth" in sources:
+                #     sources.remove("bluetooth")
+                #     _LOGGER.info("🚫 [SmartThings Soundbar] Hidden 'bluetooth' from source list to prevent API freeze during reload.")
+                return sources
+ 
+        return []
 
     async def async_select_source(self, source: str) -> None:
-        app = resolve_app(source)
-        if app is None:
-            raise HomeAssistantError(f"Unknown app source: {source}")
-        await self.device.send_command("custom.launchapp", "launchApp", arguments=[app.app_id, app.name])
-        await self.coordinator.async_request_refresh()
+        if self.device.has_capability("custom.launchapp"):
+            app = resolve_app(source)
+            if app is None:
+                raise HomeAssistantError(f"Unknown app source: {source}")
+            await self.device.send_command("custom.launchapp", "launchApp", arguments=[app.app_id, app.name])
+            await self.coordinator.async_request_refresh()
+            return
 
+        if self.device.has_capability("samsungvd.audioInputSource"):
+            source_map = await self.async_get_source_map()
+            if not source_map:
+                return
+            if source not in source_map:
+                _LOGGER.warning(
+                    "Source %s not found in source map %s. Please perform a manual source change with the remote, "
+                    "wait for the device to update, and it will be learned automatically by the integration.", 
+                    source, source_map
+                )
+                return
+            await self.device.send_command(
+                capability="execute",
+                command="execute",
+                arguments=[
+                    "/sec/networkaudio/soundFrom",
+                    {
+                        "x.com.samsung.networkaudio.soundFrom": {
+                            "sbMode": source_map[source]["sbMode"]
+                        }
+                    }
+                ]
+            )
+            await self.coordinator.async_request_refresh()
+
+
+####### START of code for self learning source map #####################
+
+    def _sync_get_source_map(self, safe_model_name: str) -> dict:
+        """Triggers inside the executor thread to safely read from disk."""
+        if not os.path.exists(self._source_maps_dir):
+            try:
+                os.makedirs(self._source_maps_dir)
+            except Exception as e:
+                _LOGGER.error("Could not create source maps directory. Error: %s", e)
+
+        model_file_path = os.path.join(self._source_maps_dir, f"{safe_model_name}_source_map.json")
+        default_file_path = os.path.join(self._source_maps_dir, "default_source_map.json")
+
+        if os.path.exists(model_file_path):
+            try:
+                with open(model_file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                _LOGGER.error("Error reading source map file for %s: %s", safe_model_name, e)
+
+        if safe_model_name == "default" and os.path.exists(default_file_path):
+            try:
+                with open(default_file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                _LOGGER.error("Error reading default_source_map.json: %s", e)
+
+        defaults = {
+            "HDMI1": {"sbMode": 3},
+            "HDMI2": {"sbMode": 20},
+            "digital": {"sbMode": 10},
+            "wifi": {"sbMode": 25}
+        }
+    
+        if not os.path.exists(default_file_path):
+            try:
+                os.makedirs(self._source_maps_dir, exist_ok=True)
+                with open(default_file_path, "w", encoding="utf-8") as f:
+                    json.dump(defaults, f, indent=4)
+            except Exception as e:
+                _LOGGER.error("Could not write default source map file to disk: %s", e)
+
+        return defaults
+
+    async def async_get_source_map(self) -> dict:
+        """Asynchronously gets the source map without blocking the event loop."""
+        if not hasattr(self, "_source_maps_dir") or not self._source_maps_dir:
+            return {}
+
+        tmp = self.device.get_attr("ocf", "mnmo") 
+        model_name = tmp if tmp is not None else "default"
+        safe_model_name = "".join(c for c in model_name if c.isalnum() or c in ("-", "_")).strip()
+        if not safe_model_name:
+            safe_model_name = "default"
+
+        return await self.hass.async_add_executor_job(self._sync_get_source_map, safe_model_name)
+
+    def _sync_write_source_map(self, safe_model_name: str, model_map: dict) -> None:
+        """Triggers inside the executor thread to safely write to disk."""
+
+        model_file_path = os.path.join(self._source_maps_dir, f"{safe_model_name}_source_map.json")
+        try:
+            os.makedirs(self._source_maps_dir, exist_ok=True)
+            with open(model_file_path, "w", encoding="utf-8") as f:
+                json.dump(model_map, f, indent=4)
+        except Exception as e:
+            _LOGGER.error("Could not save learned source to %s: %s", model_file_path, e)
+
+    async def async_update_source_map(self) -> None:
+        """Asynchronously updates the specific model's JSON file when a new source is found."""
+        if not hasattr(self, "_source_maps_dir") or not self._source_maps_dir:
+            return
+
+        model_name = self.device.get_attr("ocf", "mnmo")
+        sb_mode = self.device.get_attr("samsungvd.soundFrom", "mode")
+        source_name = self.device.get_attr("samsungvd.audioInputSource", "inputSource")
+        if source_name is None or sb_mode is None or model_name is None:
+            return
+
+        current_map = await self.async_get_source_map()
+
+        safe_model_name = "".join(c for c in model_name if c.isalnum() or c in ("-", "_")).strip()
+        if not safe_model_name:
+            safe_model_name = "default"
+        
+        if source_name in current_map and current_map[source_name].get("sbMode") == sb_mode:
+            if safe_model_name == "default":
+                return
+            model_file_path = os.path.join(self._source_maps_dir, f"{safe_model_name}_source_map.json")
+            if await self.hass.async_add_executor_job(os.path.exists, model_file_path):
+                return
+
+        model_file_path = os.path.join(self._source_maps_dir, f"{safe_model_name}_source_map.json")
+        model_map = current_map.copy()
+
+        model_map[source_name] = {"sbMode": sb_mode}
+
+        await self.hass.async_add_executor_job(self._sync_write_source_map, safe_model_name, model_map)
+        
+        _LOGGER.warning(
+            "💾 [SmartThings Soundbar] New source learned for %s: %s -> %s! "
+            "To make it permanent, please open a quick GitHub PR and upload this file: %s", 
+            model_name, source_name, sb_mode, model_file_path
+        )
+
+####### END of code for self learning source map #####################
 
 class SoundbarLocalMediaPlayer(MediaPlayerEntity):
     """2024-line Samsung soundbar over LAN (HTTPS JSON-RPC on port 1516)."""

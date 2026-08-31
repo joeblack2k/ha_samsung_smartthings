@@ -1,0 +1,14 @@
+{
+    "HDMI1": {
+        "sbMode": 3
+    },
+    "HDMI2": {
+        "sbMode": 20
+    },
+    "digital": {
+        "sbMode": 10
+    },
+    "wifi": {
+        "sbMode": 25
+    }
+}
