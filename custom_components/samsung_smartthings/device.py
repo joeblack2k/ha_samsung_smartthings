@@ -63,8 +63,6 @@ class SmartThingsDevice:
         self._sb_bass_mode: int | None = None
         self._sb_voice_amplifier: int | None = None
         self._sb_execute_supported: bool | None = None
-        self._sb_soundmode_validation_done: bool = False
-        self._sb_last_soundmode_validation: float = 0.0
 
         # Throttle execute polling to avoid spamming the API.
         self._sb_last_execute_poll: float = 0.0
@@ -149,6 +147,22 @@ class SmartThingsDevice:
             return None
         u = node.get("unit")
         return u if isinstance(u, str) else None
+
+    def get_media_metadata(self) -> tuple[str | None, str | None]:
+        """Read optional track metadata without assuming a payload is present."""
+        data = self.get_attr("audioTrackData", "audioTrackData")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except (ValueError, TypeError):
+                return None, None
+        if not isinstance(data, dict):
+            return None, None
+        title, artist = data.get("title"), data.get("artist")
+        return (
+            title if isinstance(title, str) else None,
+            artist if isinstance(artist, str) else None,
+        )
 
     def flatten_attributes(self) -> list[tuple[str, str, str, Any, str | None]]:
         """Return [(component, capability, attribute, value, unit)] for all components."""
@@ -328,7 +342,10 @@ class SmartThingsDevice:
         if not self.has_capability("execute"):
             self._sb_execute_supported = False
             return
-        if self._sb_execute_supported is False:
+        # Capability support and a temporarily unreachable/off soundbar are
+        # different things. A failed query must not disable every later poll.
+        self._sb_execute_supported = True
+        if self.get_attr("switch", "switch") not in ("on", True):
             return
 
         # Throttle heavy execute polling.
@@ -338,21 +355,23 @@ class SmartThingsDevice:
         self._sb_last_execute_poll = now
 
         try:
-            # Treat execute as supported as soon as we can successfully call it, even if
-            # SmartThings doesn't provide read-back state in the status payload.
-            # Many soundbars return empty payloads while still accepting execute commands.
-            if self._sb_execute_supported is None:
-                self._sb_execute_supported = True
-
             # Sound mode
             payload = await self.execute_query(EXECUTE_SOUNDMODE)
             if payload:
-                self._sb_soundmodes = list(payload.get("x.com.samsung.networkaudio.supportedSoundmode") or [])
-                self._sb_soundmode = payload.get("x.com.samsung.networkaudio.soundmode")
-            # Some models return an empty/null execute payload while commands still work.
-            # Ensure fallback options are validated/exposed in that case as well.
+                modes = payload.get("x.com.samsung.networkaudio.supportedSoundmode")
+                if isinstance(modes, list):
+                    reported = [mode for mode in modes if isinstance(mode, str) and mode]
+                    if reported:
+                        self._sb_soundmodes = reported
+                current = payload.get("x.com.samsung.networkaudio.soundmode")
+                if isinstance(current, str) and current:
+                    self._sb_soundmode = current
+            # Fallback candidates are options to try explicitly, not proof of
+            # support. Never select modes as a side effect of ordinary polling.
             if not self._sb_soundmodes:
-                await self._ensure_validated_soundmode_options()
+                self._sb_soundmodes = self._fallback_soundmode_candidates()
+                if self._sb_soundmode and self._sb_soundmode not in self._sb_soundmodes:
+                    self._sb_soundmodes.insert(0, self._sb_soundmode)
 
             # Woofer
             payload = await self.execute_query(EXECUTE_WOOFER)
@@ -380,10 +399,8 @@ class SmartThingsDevice:
                     self._sb_soundmodes = self._fallback_soundmode_candidates()
                 return
             _LOGGER.debug("Execute-based features failed for %s (status=%s)", self.device_id, exc.status)
-            self._sb_execute_supported = False
         except Exception:
-            _LOGGER.debug("Execute-based features not available for %s", self.device_id)
-            self._sb_execute_supported = False
+            _LOGGER.debug("Execute-based features poll failed for %s", self.device_id)
 
     def _model_code(self) -> str:
         model = self.get_attr("ocf", "mnmo")
@@ -444,84 +461,6 @@ class SmartThingsDevice:
             if candidate not in dedup:
                 dedup.append(candidate)
         return dedup
-
-    async def _ensure_validated_soundmode_options(self) -> None:
-        """Validate fallback sound modes by command+readback.
-
-        We only run this when SmartThings did not provide supported modes.
-        """
-        now = asyncio.get_running_loop().time()
-        if self._sb_soundmode_validation_done:
-            return
-        if now - self._sb_last_soundmode_validation < 21600:
-            return
-        self._sb_last_soundmode_validation = now
-
-        # Avoid mode flapping while media is active; validate when idle/on.
-        # If the device is off/busy we still expose fallback options so the select
-        # is not empty, then defer active validation until a later poll.
-        sw = self.get_attr("switch", "switch")
-        if sw not in ("on", True):
-            if not self._sb_soundmodes:
-                self._sb_soundmodes = self._fallback_soundmode_candidates()
-            return
-        thing_status = self.get_attr("samsungvd.thingStatus", "status")
-        if isinstance(thing_status, str) and thing_status.lower() not in ("idle", "stopped", "ready"):
-            if not self._sb_soundmodes:
-                self._sb_soundmodes = self._fallback_soundmode_candidates()
-            return
-
-        original = self._sb_soundmode if isinstance(self._sb_soundmode, str) else None
-        validated: list[str] = []
-        had_readback = False
-        for mode in self._fallback_soundmode_candidates():
-            try:
-                await self.set_soundbar_soundmode(mode)
-                await asyncio.sleep(0.6)
-                payload = await self.execute_query(EXECUTE_SOUNDMODE)
-                current = payload.get("x.com.samsung.networkaudio.soundmode") if isinstance(payload, dict) else None
-                if isinstance(current, str):
-                    had_readback = True
-                    self._sb_soundmode = current
-                if current == mode:
-                    validated.append(mode)
-            except ClientResponseError as exc:
-                if exc.status == 429:
-                    # Keep UI usable under SmartThings rate-limits.
-                    if not self._sb_soundmodes:
-                        self._sb_soundmodes = self._fallback_soundmode_candidates()
-                    break
-                if exc.status in (400, 409, 422):
-                    continue
-                raise
-            except Exception:
-                continue
-
-        if original:
-            try:
-                await self.set_soundbar_soundmode(original)
-                self._sb_soundmode = original
-            except Exception:
-                pass
-            if original not in validated:
-                validated.insert(0, original)
-
-        # Deduplicate, keep order.
-        dedup: list[str] = []
-        for mode in validated:
-            if mode not in dedup:
-                dedup.append(mode)
-        if dedup:
-            self._sb_soundmodes = dedup
-        elif not had_readback:
-            # SmartThings sometimes returns null execute data while still accepting soundmode
-            # commands. In that case expose fallback candidates so users can try working values.
-            fallback = []
-            for mode in self._fallback_soundmode_candidates():
-                if mode not in fallback:
-                    fallback.append(mode)
-            self._sb_soundmodes = fallback
-        self._sb_soundmode_validation_done = True
 
     # -- Soundbar execute-based setters --
 

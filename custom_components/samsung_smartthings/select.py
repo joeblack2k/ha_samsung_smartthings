@@ -54,7 +54,7 @@ async def async_setup_entry(
         coordinator = domain["coordinator"]
         soundbar: AsyncSoundbarLocal = domain["soundbar"]
         host = domain.get("host") or "soundbar"
-        # Build a reliable mode list once (set+read validation).
+        # Expose mode candidates without selecting them during entity setup.
         try:
             modes = await soundbar.detect_supported_sound_modes()
             if modes:

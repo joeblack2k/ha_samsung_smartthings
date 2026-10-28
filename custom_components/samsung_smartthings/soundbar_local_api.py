@@ -41,7 +41,6 @@ class AsyncSoundbarLocal:
         self._timeout = timeout
         self._token: str | None = None
         self._supported_sound_modes: list[str] | None = None
-        self._last_sound_mode_probe: float = 0.0
         self._night_mode: bool | None = None
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -203,54 +202,14 @@ class AsyncSoundbarLocal:
         ]
 
     async def detect_supported_sound_modes(self, *, force: bool = False) -> list[str]:
-        """Discover supported sound modes by set+read validation.
+        """Return fallback candidates without changing the device's sound mode.
 
-        This avoids showing modes that are not actually accepted by the device.
+        The local API does not report a supported-mode list. These candidates
+        may vary by model/firmware; only an explicit user selection should try
+        a mode. ``force`` rebuilds the cache without probing the hardware.
         """
-        now = asyncio.get_running_loop().time()
-        if not force and self._supported_sound_modes is not None:
-            return list(self._supported_sound_modes)
-        if not force and now - self._last_sound_mode_probe < 900:
-            return list(self._supported_sound_modes or [])
-        self._last_sound_mode_probe = now
-
-        try:
-            if await self.power_state() != "powerOn":
-                return list(self._supported_sound_modes or [])
-        except Exception:
-            return list(self._supported_sound_modes or [])
-
-        current = None
-        try:
-            current = await self.sound_mode()
-        except Exception:
-            current = None
-
-        validated: list[str] = []
-        for mode in self.default_sound_mode_candidates():
-            try:
-                await self.set_sound_mode(mode)
-                await asyncio.sleep(0.35)
-                observed = await self.sound_mode()
-                if observed == mode:
-                    validated.append(mode)
-            except Exception:
-                continue
-
-        if current:
-            try:
-                await self.set_sound_mode(current)
-            except Exception:
-                pass
-            if current not in validated:
-                validated.insert(0, current)
-
-        # Keep order, remove duplicates.
-        dedup: list[str] = []
-        for mode in validated:
-            if mode not in dedup:
-                dedup.append(mode)
-        self._supported_sound_modes = dedup
+        if force or self._supported_sound_modes is None:
+            self._supported_sound_modes = self.default_sound_mode_candidates()
         return list(self._supported_sound_modes)
 
     # Getters
@@ -289,10 +248,14 @@ class AsyncSoundbarLocal:
             "codec": await self.codec(),
             "identifier": await self.identifier(),
         }
-        # If the device is on, try to build/refresh the validated mode list (throttled).
+        # Assemble options without issuing mode-selection commands.
         if power == "powerOn":
             try:
                 modes = await self.detect_supported_sound_modes()
+                current = data["sound_mode"]
+                if current and current not in modes:
+                    modes.insert(0, current)
+                    self._supported_sound_modes = modes
                 if modes:
                     data["supported_sound_modes"] = modes
             except Exception:

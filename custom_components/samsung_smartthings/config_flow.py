@@ -8,6 +8,7 @@ from typing import Any
 from aiohttp import ClientResponseError
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
+from homeassistant.core import callback
 from homeassistant.helpers import config_entry_oauth2_flow
 import voluptuous as vol
 
@@ -352,14 +353,12 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         )
 
     @staticmethod
+    @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
-
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
