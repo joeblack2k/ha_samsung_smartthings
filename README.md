@@ -165,6 +165,16 @@ To keep the UI usable, this integration:
 - Supports adaptive aliases: `adaptive`, `adaptive_sound`, `adaptive sound`
 - Lets you configure custom cloud candidates in options via `cloud_soundmodes` (comma-separated)
 
+Cloud polling and local setup/status refresh never select candidate sound modes
+to test support. Reported modes are preferred; fallback entries are candidates,
+and a model may reject one when explicitly selected. Local status also retains
+an observed current mode that is absent from the fallback list.
+
+Execute-feature queries are skipped while cloud power is off or unknown. A
+failed query preserves capability support and cached values so the normal
+five-minute execute polling interval can recover after power/network returns.
+This does not add an immediate retry loop or increase polling frequency.
+
 This means sound mode controls stay available even when SmartThings metadata is incomplete.
 
 ### SmartThings Cloud (Use Home Assistant SmartThings login, recommended)

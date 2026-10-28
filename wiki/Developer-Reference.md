@@ -79,7 +79,7 @@ Known issue:
 Mitigation:
 - Fallback sound mode candidate sets
 - Adaptive alias normalization
-- Throttled validation cycles
+- Throttled read-only polling; no automatic mode-selection probes
 
 ## 5) Adaptive sound alias handling
 

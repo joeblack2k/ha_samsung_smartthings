@@ -21,6 +21,16 @@ Mitigations in this integration:
 - Fallback sound mode candidates and alias handling
 - Diagnostic entities hidden/disabled by default
 
+Sound mode discovery is non-invasive on both paths: it does not select modes
+to determine whether they work. Cloud-reported lists are preferred; when no
+list is available, the existing fallback candidates remain available for an
+explicit user selection. A fallback entry is not a verified supported mode.
+
+Cloud execute polling skips off/unknown power and preserves last-known state
+after a failed request. The next normal throttled poll can recover without
+reloading the integration. A device without the execute capability remains
+unsupported. Local setup and status refresh do not issue mode-changing calls.
+
 ## Execute endpoints (cloud)
 
 Important execute routes:

@@ -38,7 +38,7 @@ class SmartThingsCoordinator(DataUpdateCoordinator[dict]):
             self.device.update_runtime_status(status)
 
             # Poll execute-based features for soundbars.
-            if self.device.is_soundbar and self.device._sb_execute_supported is not False:
+            if self.device.is_soundbar:
                 try:
                     await self.device.update_execute_features()
                 except Exception:
