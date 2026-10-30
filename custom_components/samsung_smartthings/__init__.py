@@ -1401,6 +1401,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_type = entry.data.get(CONF_ENTRY_TYPE)
+    if entry_type == "soundbar_ocf":
+        from .soundbar_ocf import async_setup_entry as setup_ocf
+        return await setup_ocf(hass, entry)
 
     # ---- Frame TV Local (LAN Art API) entry type ----
     if entry_type == ENTRY_TYPE_FRAME_LOCAL:
@@ -1718,6 +1721,9 @@ async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_type = entry.data.get(CONF_ENTRY_TYPE)
+    if entry_type == "soundbar_ocf":
+        from .soundbar_ocf import async_unload_entry as unload_ocf
+        return await unload_ocf(hass, entry)
     is_legacy_soundbar_entry = (
         entry_type is None
         and isinstance(entry.data.get(CONF_HOST_LOCAL) or entry.data.get(CONF_HOST), str)

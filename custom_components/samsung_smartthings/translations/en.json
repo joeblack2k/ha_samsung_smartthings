@@ -37,6 +37,13 @@
           "host": "Frame TV IP address",
           "ws_name": "Client name shown on TV"
         }
+      },
+      "soundbar_ocf": {
+        "title": "Soundbar advanced settings (Local OCF)",
+        "description": "Recover your own device key using the repository guide first. Place the private credential file in .storage/samsung_smartthings_ocf inside your Home Assistant configuration, then enter only its filename. Turn the soundbar on for the read-only connection check. This does not pair, reset, or contact SmartThings cloud.",
+        "data": {
+          "credential_file": "Private credential filename"
+        }
       }
     },
     "error": {
@@ -44,7 +51,9 @@
       "invalid_auth": "Invalid token.",
       "invalid_ha_smartthings": "Please select a valid Home Assistant SmartThings account.",
       "invalid_scan_interval": "Invalid polling interval.",
-      "invalid_discovery_interval": "Invalid discovery interval."
+      "invalid_discovery_interval": "Invalid discovery interval.",
+      "invalid_ocf_file": "The private credential file is missing or invalid. Check the filename and guide; do not paste keys into logs or bug reports.",
+      "cannot_connect_ocf": "Could not confirm local soundbar settings. Check power, LAN reachability and that the key belongs to this device."
     },
     "abort": {
       "already_configured": "This SmartThings account is already configured.",

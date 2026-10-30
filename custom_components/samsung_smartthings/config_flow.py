@@ -102,6 +102,8 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         """Pick setup type (Cloud or Local soundbar)."""
         if user_input is not None:
             t = user_input.get(CONF_ENTRY_TYPE)
+            if t == "soundbar_ocf":
+                return await self.async_step_soundbar_ocf()
             if t == ENTRY_TYPE_SOUNDBAR_LOCAL:
                 return await self.async_step_soundbar_local()
             if t == ENTRY_TYPE_FRAME_LOCAL:
@@ -122,6 +124,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
                             CLOUD_SETUP_OAUTH_APP_CREDENTIALS: "SmartThings Cloud (OAuth2, bring your own app)",
                             ENTRY_TYPE_CLOUD: "SmartThings Cloud (PAT token)",
                             ENTRY_TYPE_SOUNDBAR_LOCAL: "Soundbar Local (LAN)",
+                            "soundbar_ocf": "Soundbar advanced settings (Local OCF, own key)",
                             ENTRY_TYPE_FRAME_LOCAL: "Frame TV Local (LAN, Art API)",
                         }
                     )
@@ -224,6 +227,36 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         return self.async_show_form(
             step_id="cloud_pat",
             data_schema=vol.Schema({vol.Required(CONF_PAT_TOKEN): str}),
+            errors=errors,
+        )
+
+    async def async_step_soundbar_ocf(self, user_input=None):
+        """Validate an owner-supplied private file with read-only device calls."""
+        from .soundbar_ocf import CONF_CREDENTIAL_FILE, read_configuration
+        from .soundbar_ocf_api import LocalControlError
+        from .soundbar_ocf_settings import SettingsClient
+        errors = {}
+        if user_input is not None:
+            try:
+                filename = user_input[CONF_CREDENTIAL_FILE]
+                credentials = await read_configuration(self.hass, filename)
+            except (KeyError, LocalControlError):
+                errors["base"] = "invalid_ocf_file"
+            else:
+                await self.async_set_unique_id(f"soundbar_ocf_{credentials.device_id}")
+                self._abort_if_unique_id_configured()
+                try:
+                    await self.hass.async_add_executor_job(SettingsClient(credentials).read)
+                except Exception:
+                    errors["base"] = "cannot_connect_ocf"
+                else:
+                    return self.async_create_entry(
+                        title="Soundbar local settings",
+                        data={CONF_ENTRY_TYPE: "soundbar_ocf", CONF_CREDENTIAL_FILE: filename},
+                    )
+        return self.async_show_form(
+            step_id="soundbar_ocf",
+            data_schema=vol.Schema({vol.Required(CONF_CREDENTIAL_FILE, default="credentials.json"): str}),
             errors=errors,
         )
 

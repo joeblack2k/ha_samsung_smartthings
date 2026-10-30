@@ -1,5 +1,10 @@
 # Soundbar Deep Dive
 
+For advanced settings without cloud execute calls, see
+[Fully local soundbar controls and own-key setup](Soundbar-Fully-Local.md).
+This is a separate authenticated OCF entry alongside the existing LAN driver;
+it does not automatically change existing cloud or local entries.
+
 ## Architecture
 
 There are two soundbar paths:
