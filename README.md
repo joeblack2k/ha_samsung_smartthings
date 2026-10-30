@@ -19,6 +19,7 @@ For complete documentation (user + developer), see the wiki pages in this reposi
 - [Compatibility Matrix](wiki/Compatibility-Matrix.md)
 - [Frame TV Deep Dive](wiki/FrameTV-Deep-Dive.md)
 - [Soundbar Deep Dive](wiki/Soundbar-Deep-Dive.md)
+- [Fully local soundbar controls and own-key setup](wiki/Soundbar-Fully-Local.md)
 - [Automation Recipes](wiki/Automation-Recipes.md)
 - [Developer Reference](wiki/Developer-Reference.md)
 - [Credits & References](wiki/Credits-and-References.md)
@@ -60,6 +61,13 @@ This integration supports Samsung soundbars through two paths:
 - `Soundbar Local (LAN)` (best control quality, currently for 2024 Wi-Fi soundbars with IP control enabled)
 
 ### Quick recommendation
+
+For authenticated advanced local settings (including rear placement, Voice
+Enhancement and channel levels), see [the fully local guide](wiki/Soundbar-Fully-Local.md).
+The new OCF entry complements the existing LAN entry and requires your own
+device key. HW-Q990H protocol mappings are verified; other models and individual
+custom EQ bands are not covered by that verification. Cloud remains optional
+for these local entries; existing cloud setups are not changed automatically.
 
 - Use `Soundbar Local (LAN)` whenever your model supports it and you can enable IP control.
 - Keep `SmartThings Cloud` enabled for discovery/account-level convenience and extra metadata.

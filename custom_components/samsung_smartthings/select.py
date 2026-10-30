@@ -37,6 +37,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     domain = hass.data[DOMAIN][entry.entry_id]
+    if entry.data.get(CONF_ENTRY_TYPE) == "soundbar_ocf":
+        from .soundbar_ocf import entities_for
+        async_add_entities(entities_for(domain["coordinator"], "select"))
+        return
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_FRAME_LOCAL or domain.get("type") == ENTRY_TYPE_FRAME_LOCAL:
         coordinator = domain["coordinator"]
         frame: AsyncFrameLocal = domain["frame"]
