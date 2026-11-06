@@ -71,6 +71,8 @@ FRAME_SYNC_STORE_KEY = f"{DOMAIN}_frame_sync"
 FRAME_PANEL_STORE_VERSION = 1
 FRAME_PANEL_STORE_KEY = f"{DOMAIN}_frame_panel"
 FRAME_PANEL_URL_PATH = "frame-tv"
+FRAME_PANEL_REGISTERED_KEY = f"{DOMAIN}_frame_panel_registered"
+FRAME_VIEWS_REGISTERED_KEY = f"{DOMAIN}_frame_views_registered"
 FRAME_PANEL_DATA_PATH = "/api/samsung_smartthings/frame_tv_panel/data"
 FRAME_PANEL_SET_PATH = "/api/samsung_smartthings/frame_tv_panel/set"
 FRAME_PANEL_THUMB_PATH = "/api/samsung_smartthings/frame_tv_panel/thumb"
@@ -812,15 +814,21 @@ async def _ensure_discovery_task(hass: HomeAssistant, entry: ConfigEntry) -> Non
     hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["_discovery_task"] = task
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    hass.data.setdefault(DOMAIN, {})
-    Path(hass.config.path("FrameTV")).mkdir(parents=True, exist_ok=True)
-    if not hass.data[DOMAIN].get("_frame_panel_registered"):
-        hass.http.register_view(FrameTVPanelDataView(hass))
-        hass.http.register_view(FrameTVPanelSetView(hass))
-        hass.http.register_view(FrameTVPanelFavoriteView(hass))
-        hass.http.register_view(FrameTVPanelUIView())
-        hass.http.register_view(FrameTVPanelThumbView(hass))
+def _has_loaded_frame_local_entry(hass: HomeAssistant) -> bool:
+    return any(
+        isinstance(dom, dict) and dom.get("type") == ENTRY_TYPE_FRAME_LOCAL
+        for dom in (hass.data.get(DOMAIN) or {}).values()
+    )
+
+
+async def _async_update_frame_panel(hass: HomeAssistant) -> None:
+    """Show the FrameTV sidebar panel only while a Frame Local entry is loaded."""
+    registered = bool(hass.data.get(FRAME_PANEL_REGISTERED_KEY))
+    wanted = _has_loaded_frame_local_entry(hass)
+    if wanted and not registered:
+        await hass.async_add_executor_job(
+            lambda: Path(hass.config.path("FrameTV")).mkdir(parents=True, exist_ok=True)
+        )
         frontend.async_register_built_in_panel(
             hass,
             component_name="iframe",
@@ -830,7 +838,24 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             config={"url": "/api/samsung_smartthings/frame_tv_panel/ui"},
             require_admin=False,
         )
-        hass.data[DOMAIN]["_frame_panel_registered"] = True
+        hass.data[FRAME_PANEL_REGISTERED_KEY] = True
+    elif registered and not wanted:
+        frontend.async_remove_panel(hass, FRAME_PANEL_URL_PATH)
+        hass.data.pop(FRAME_PANEL_REGISTERED_KEY, None)
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    hass.data.setdefault(DOMAIN, {})
+    # HTTP views can't be unregistered, so register them once. They only expose
+    # data for loaded Frame Local entries. The sidebar panel itself is added or
+    # removed with Frame Local entries (see _async_update_frame_panel).
+    if not hass.data.get(FRAME_VIEWS_REGISTERED_KEY):
+        hass.http.register_view(FrameTVPanelDataView(hass))
+        hass.http.register_view(FrameTVPanelSetView(hass))
+        hass.http.register_view(FrameTVPanelFavoriteView(hass))
+        hass.http.register_view(FrameTVPanelUIView())
+        hass.http.register_view(FrameTVPanelThumbView(hass))
+        hass.data[FRAME_VIEWS_REGISTERED_KEY] = True
 
     # Services remain: they are useful for advanced cases and debugging.
     async def _resolve_device(call):
@@ -1486,6 +1511,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
 
         await hass.config_entries.async_forward_entry_setups(entry, ["media_player", "switch", "select", "number", "sensor"])
+        await _async_update_frame_panel(hass)
 
         return True
 
@@ -1736,6 +1762,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
             if not hass.data.get(DOMAIN):
                 hass.data.pop(DOMAIN, None)
+            await _async_update_frame_panel(hass)
         return unload_ok
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
