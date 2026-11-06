@@ -62,6 +62,10 @@ The integration supports:
 - Internet collections (`museums`, `nature`, `architecture`)
 - Favorites workflow
 
+The **FrameTV** sidebar panel (and the `/config/FrameTV` folder) only appear when at least one
+*Frame TV Local* entry is set up. Cloud-only or Soundbar Local setups do not get the panel, and it
+is removed again when the last Frame TV Local entry is unloaded or deleted.
+
 ## App launch on Frame
 
 Supported via:
