@@ -94,6 +94,25 @@ class AsyncSoundbarLocal:
             return data
         raise SoundbarLocalError(f"Unexpected response: {data!r}")
 
+    @staticmethod
+    def _raise_if_error_payload(data: dict[str, Any]) -> None:
+        """Raise if a raw (non-JSON-RPC-wrapped) response signals failure.
+
+        ``_post_any`` is used for event-style payloads that don't follow the
+        ``{"result": ...}`` envelope ``_post`` understands, so its callers
+        must check for an error themselves. Observed failure shapes include
+        the usual JSON-RPC envelope (``{"error": {...}}``) and a bare
+        ``{"code": ..., "message": ...}`` object with no envelope at all. A
+        genuine success response never has a top-level ``code``/``message``
+        pair without a ``result``, so either shape is treated as an error.
+        """
+        if not isinstance(data, dict):
+            return
+        if "error" in data:
+            raise SoundbarLocalError(str(data["error"]))
+        if "result" not in data and "code" in data and "message" in data:
+            raise SoundbarLocalError(f"{data.get('code')}: {data.get('message')}")
+
     async def _call(self, method: str, **params: Any) -> dict[str, Any]:
         if method != "createAccessToken":
             if not self._token:
@@ -184,7 +203,8 @@ class AsyncSoundbarLocal:
                 },
             },
         }
-        await self._post_any(payload)
+        response = await self._post_any(payload)
+        self._raise_if_error_payload(response)
         self._night_mode = enabled
 
     @staticmethod
